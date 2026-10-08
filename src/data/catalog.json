@@ -1,0 +1,226 @@
+[
+  {
+    "title": "ELDEN RING",
+    "genre": "RPG",
+    "steamId": 1245620,
+    "coverUrl": "/covers/1245620.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/1245620/"
+  },
+  {
+    "title": "Hades",
+    "genre": "Roguelike",
+    "steamId": 1145360,
+    "coverUrl": "/covers/1145360.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/1145360/"
+  },
+  {
+    "title": "Hollow Knight",
+    "genre": "Metroidvania",
+    "steamId": 367520,
+    "coverUrl": "/covers/367520.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/367520/"
+  },
+  {
+    "title": "The Witcher 3: Wild Hunt — Remastered",
+    "genre": "RPG",
+    "steamId": 292030,
+    "coverUrl": "/covers/292030.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/292030/"
+  },
+  {
+    "title": "Red Dead Redemption 2",
+    "genre": "Aventura",
+    "steamId": 1174180,
+    "coverUrl": "/covers/1174180.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/1174180/"
+  },
+  {
+    "title": "Cyberpunk 2077",
+    "genre": "RPG",
+    "steamId": 1091500,
+    "coverUrl": "/covers/1091500.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/1091500/"
+  },
+  {
+    "title": "Stardew Valley",
+    "genre": "Simulação",
+    "steamId": 413150,
+    "coverUrl": "/covers/413150.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/413150/"
+  },
+  {
+    "title": "Portal 2",
+    "genre": "Puzzle",
+    "steamId": 620,
+    "coverUrl": "/covers/620.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/620/"
+  },
+  {
+    "title": "Celeste",
+    "genre": "Plataforma",
+    "steamId": 504230,
+    "coverUrl": "/covers/504230.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/504230/"
+  },
+  {
+    "title": "God of War",
+    "genre": "Ação",
+    "steamId": 1593500,
+    "coverUrl": "/covers/1593500.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/1593500/"
+  },
+  {
+    "title": "Baldur's Gate 3",
+    "genre": "RPG",
+    "steamId": 1086940,
+    "coverUrl": "/covers/1086940.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/1086940/"
+  },
+  {
+    "title": "Sekiro™: Shadows Die Twice - GOTY Edition",
+    "genre": "Ação",
+    "steamId": 814380,
+    "coverUrl": "/covers/814380.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/814380/"
+  },
+  {
+    "title": "DARK SOULS™ III",
+    "genre": "RPG",
+    "steamId": 374320,
+    "coverUrl": "/covers/374320.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/374320/"
+  },
+  {
+    "title": "DEATH STRANDING DIRECTOR'S CUT",
+    "genre": "Aventura",
+    "steamId": 1850570,
+    "coverUrl": "/covers/1850570.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/1850570/"
+  },
+  {
+    "title": "Disco Elysium - The Final Cut",
+    "genre": "RPG",
+    "steamId": 632470,
+    "coverUrl": "/covers/632470.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/632470/"
+  },
+  {
+    "title": "Resident Evil 4",
+    "genre": "Terror",
+    "steamId": 2050650,
+    "coverUrl": "/covers/2050650.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/2050650/"
+  },
+  {
+    "title": "Lies of P",
+    "genre": "RPG",
+    "steamId": 1627720,
+    "coverUrl": "/covers/1627720.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/1627720/"
+  },
+  {
+    "title": "Dead Cells",
+    "genre": "Roguelike",
+    "steamId": 588650,
+    "coverUrl": "/covers/588650.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/588650/"
+  },
+  {
+    "title": "Cuphead",
+    "genre": "Plataforma",
+    "steamId": 268910,
+    "coverUrl": "/covers/268910.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/268910/"
+  },
+  {
+    "title": "Ori and the Blind Forest",
+    "genre": "Metroidvania",
+    "steamId": 261570,
+    "coverUrl": "/covers/261570.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/261570/"
+  },
+  {
+    "title": "Ori and the Will of the Wisps",
+    "genre": "Metroidvania",
+    "steamId": 1057090,
+    "coverUrl": "/covers/1057090.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/1057090/"
+  },
+  {
+    "title": "Terraria",
+    "genre": "Aventura",
+    "steamId": 105600,
+    "coverUrl": "/covers/105600.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/105600/"
+  },
+  {
+    "title": "The Elder Scrolls V: Skyrim Special Edition",
+    "genre": "RPG",
+    "steamId": 489830,
+    "coverUrl": "/covers/489830.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/489830/"
+  },
+  {
+    "title": "Grand Theft Auto V Legacy",
+    "genre": "Ação",
+    "steamId": 271590,
+    "coverUrl": "/covers/271590.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/271590/"
+  },
+  {
+    "title": "DOOM",
+    "genre": "FPS",
+    "steamId": 379720,
+    "coverUrl": "/covers/379720.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/379720/"
+  },
+  {
+    "title": "DOOM Eternal",
+    "genre": "FPS",
+    "steamId": 782330,
+    "coverUrl": "/covers/782330.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/782330/"
+  },
+  {
+    "title": "Undertale",
+    "genre": "RPG",
+    "steamId": 391540,
+    "coverUrl": "/covers/391540.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/391540/"
+  },
+  {
+    "title": "Outer Wilds",
+    "genre": "Aventura",
+    "steamId": 753640,
+    "coverUrl": "/covers/753640.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/753640/"
+  },
+  {
+    "title": "No Man's Sky",
+    "genre": "Aventura",
+    "steamId": 275850,
+    "coverUrl": "/covers/275850.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/275850/"
+  },
+  {
+    "title": "Hollow Knight: Silksong",
+    "genre": "Metroidvania",
+    "steamId": 1030300,
+    "coverUrl": "/covers/1030300.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/1030300/"
+  },
+  {
+    "title": "Hades II",
+    "genre": "Roguelike",
+    "steamId": 1145350,
+    "coverUrl": "/covers/1145350.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/1145350/"
+  },
+  {
+    "title": "Marvel’s Spider-Man Remastered",
+    "genre": "Ação",
+    "steamId": 1817070,
+    "coverUrl": "/covers/1817070.jpg",
+    "sourceUrl": "https://store.steampowered.com/app/1817070/"
+  }
+]

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+coverage/
+*.log
+.DS_Store
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Credenciais privadas: nunca publicar
+**/service-account*.json
+**/credentials*.json

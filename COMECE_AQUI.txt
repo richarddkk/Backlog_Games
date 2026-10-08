@@ -1,0 +1,56 @@
+CHECKPOINT - BIBLIOTECA DE JOGOS
+
+1. Instale o Node.js (versão 22.12 ou mais recente).
+2. Extraia o ZIP e abra a pasta checkpoint no VS Code.
+3. Abra o terminal nessa pasta e execute:
+
+   npm install
+   npm run dev
+
+4. Abra http://localhost:5173 no navegador.
+
+O modo local funciona imediatamente, com jogos de exemplo.
+Use "Começar biblioteca vazia" para montar sua coleção.
+
+PARA ATIVAR CONTAS E SALVAR NA NUVEM:
+
+Leia a seção 2 do README.md. Ela explica como criar seu projeto
+Firebase, ativar E-mail/senha, criar o Firestore, publicar as regras
+e preencher o arquivo .env.
+
+Os arquivos necessários já estão incluídos:
+- .env.example
+- firestore.rules
+- firebase.json
+
+As capas automáticas atendem os 32 jogos do catálogo incluído.
+Para outros jogos, você pode colar um link direto de imagem.
+
+O README.md também explica cada arquivo, os controles, os testes
+e as soluções para problemas comuns.
+
+CONFIGURAÇÕES E ADMINISTRADOR (VERSÃO 1.1)
+
+Use a engrenagem no topo para gerenciar listas/categorias e gêneros.
+Cada conta pode criar opções pessoais. Apenas a conta administradora
+pode modificar ou criar opções globais para todos.
+
+Para ativar sua conta de administrador:
+1. Publique as novas regras firestore.rules.
+2. Crie sua conta e copie o UID no Firebase Authentication.
+3. No Firestore, crie admins/SEU_UID.
+4. Adicione enabled como boolean true.
+
+O README.md explica esses passos em detalhe.
+Se já configurou a versão anterior, preserve seu arquivo .env.
+Os jogos existentes continuam compatíveis.
+
+PERFIL PESSOAL (VERSÃO 1.2.1)
+
+Para atualizar, use o ZIP completo e preserve seu .env principal.
+Execute npm install e publique o firestore.rules atualizado.
+Clique no seu nome/foto no topo para abrir Seu perfil.
+Edite o nome, escolha ou remova a foto e clique em Salvar perfil.
+A foto é reduzida e salva no Firestore, sem precisar ativar Storage.
+O perfil é privado e funciona para qualquer conta, comum ou admin.
+Esta versão mantém somente o perfil e não inclui integração Steam.

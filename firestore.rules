@@ -1,0 +1,103 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    function admin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.enabled == true;
+    }
+    function defaultList(id) {
+      return id in ['playing', 'completed', 'planned', 'platinum', 'dropped'];
+    }
+    function defaultGenre(id) {
+      return id in ['Ação', 'Aventura', 'RPG', 'Roguelike', 'Metroidvania', 'Plataforma', 'Puzzle', 'Estratégia', 'Simulação', 'Esporte', 'Corrida', 'FPS', 'Terror', 'Luta', 'MMO', 'Outro'];
+    }
+    function usableOption(userId, id, kind) {
+      let globalPath = /databases/$(database)/documents/taxonomy/$(id);
+      let personalPath = /databases/$(database)/documents/users/$(userId)/options/$(id);
+      return exists(globalPath)
+        ? (get(globalPath).data.kind == kind && get(globalPath).data.active == true)
+        : exists(personalPath)
+          ? (get(personalPath).data.kind == kind && get(personalPath).data.active == true)
+          : ((kind == 'list' && defaultList(id)) || (kind == 'genre' && defaultGenre(id)));
+    }
+    function validOption() {
+      let option = request.resource.data;
+      return option.keys().hasAll(['kind', 'label', 'color', 'icon', 'completed', 'active', 'createdAt', 'updatedAt'])
+        && option.keys().hasOnly(['kind', 'label', 'color', 'icon', 'completed', 'active', 'createdAt', 'updatedAt'])
+        && option.kind in ['list', 'genre']
+        && option.label is string && option.label.size() > 0 && option.label.size() <= 60
+        && option.color in ['green', 'blue', 'gold', 'rose', 'gray']
+        && option.icon in ['play', 'check', 'bookmark', 'trophy', 'pause', 'library']
+        && option.completed is bool && (option.kind == 'list' || option.completed == false)
+        && option.active is bool
+        && option.createdAt is number && option.createdAt >= 0
+        && option.updatedAt is number && option.updatedAt >= option.createdAt;
+    }
+    function validGlobalId(id) {
+      return (defaultList(id) && request.resource.data.kind == 'list')
+        || (defaultGenre(id) && request.resource.data.kind == 'genre')
+        || id.matches('global-[a-zA-Z0-9-]{1,80}');
+    }
+    function validGame() {
+      let game = request.resource.data;
+      return game.keys().hasAll(['title', 'genre', 'status', 'rating', 'coverUrl', 'review', 'rank', 'createdAt', 'updatedAt'])
+        && game.keys().hasOnly(['title', 'genre', 'status', 'rating', 'coverUrl', 'review', 'rank', 'createdAt', 'updatedAt'])
+        && game.title is string && game.title.size() > 0 && game.title.size() <= 120
+        && game.genre is string && game.genre.size() > 0 && game.genre.size() <= 100 && !game.genre.matches('.*[/].*')
+        && game.status is string && game.status.size() > 0 && game.status.size() <= 100 && !game.status.matches('.*[/].*')
+        && game.rating in [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]
+        && game.coverUrl is string && game.coverUrl.size() <= 2000
+        && (game.coverUrl == '' || game.coverUrl.matches('https?://.*') || game.coverUrl.matches('/covers/[a-zA-Z0-9-]+[.]jpg'))
+        && game.review is string && game.review.size() <= 3000
+        && game.rank is number && game.rank > -1000000000000000 && game.rank < 1000000000000000
+        && game.createdAt is number && game.createdAt >= 0
+        && game.updatedAt is number && game.updatedAt >= game.createdAt;
+    }
+    match /admins/{userId} {
+      allow get: if owner(userId);
+      // A promoção de administrador acontece no Console do Firebase ou Admin SDK.
+      allow list, create, update, delete: if false;
+    }
+    match /users/{userId}/profile/{profileId} {
+      allow read, delete: if owner(userId) && profileId == 'main';
+      allow create, update: if owner(userId) && profileId == 'main'
+        && request.resource.data.keys().hasAll(['displayName', 'photoData', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['displayName', 'photoData', 'updatedAt'])
+        && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 60
+        && request.resource.data.photoData is string && request.resource.data.photoData.size() <= 180000
+        && (request.resource.data.photoData == '' || request.resource.data.photoData.matches('data:image/jpeg;base64,[a-zA-Z0-9+/=]+'))
+        && request.resource.data.updatedAt is number && request.resource.data.updatedAt >= 0;
+    }
+    match /taxonomy/{optionId} {
+      allow read: if request.auth != null;
+      allow create: if admin() && validOption() && validGlobalId(optionId);
+      allow update: if admin() && validOption() && validGlobalId(optionId)
+        && request.resource.data.kind == resource.data.kind
+        && request.resource.data.createdAt == resource.data.createdAt;
+      // Arquivar preserva as referências dos jogos de todas as contas.
+      allow delete: if false;
+    }
+    match /users/{userId}/options/{optionId} {
+      allow read: if owner(userId);
+      allow create: if owner(userId) && validOption() && optionId.matches('personal-[a-zA-Z0-9-]{1,80}');
+      allow update: if owner(userId) && validOption() && optionId.matches('personal-[a-zA-Z0-9-]{1,80}')
+        && request.resource.data.kind == resource.data.kind
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+    }
+    match /users/{userId}/games/{gameId} {
+      allow read, delete: if owner(userId);
+      allow create: if owner(userId) && validGame()
+        && usableOption(userId, request.resource.data.status, 'list')
+        && usableOption(userId, request.resource.data.genre, 'genre');
+      allow update: if owner(userId) && validGame()
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (request.resource.data.status == resource.data.status || usableOption(userId, request.resource.data.status, 'list'))
+        && (request.resource.data.genre == resource.data.genre || usableOption(userId, request.resource.data.genre, 'genre'));
+    }
+  }
+}
