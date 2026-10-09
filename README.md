@@ -20,6 +20,11 @@ Uma biblioteca pessoal de jogos feita com **React + JavaScript + CSS**, usando V
 - Opções pessoais para cada conta e opções globais gerenciadas pelo administrador.
 - Cor, ícone e contagem de jogos concluídos configuráveis por lista.
 - Perfil pessoal com nome de exibição e upload de foto, com recorte e redução automáticos.
+- Página de atividades com nome da pessoa, título do jogo e data da adição ou mudança de lista.
+- Amigos por código, com pedidos, aceitação, recusa e remoção.
+- Leitura da coleção e das atividades somente entre amigos aceitos.
+- React Router DOM, layout compartilhado com Outlet e página 404.
+- Publicação automática no GitHub Pages, com rotas HashRouter.
 
 ## 1. Executar no seu computador
 
@@ -38,11 +43,11 @@ O modo local já funciona sem `.env`. Na primeira abertura ele mostra oito jogos
 
 Mantenha o terminal aberto enquanto usa o site. Para encerrar, pressione `Ctrl + C`. Abra o projeto pelo servidor do Vite, pois o código JSX precisa ser processado.
 
-## Atualizar de uma versão anterior para 1.2.1
+## Atualizar de uma versão anterior para 1.3.0
 
 Extraia o ZIP completo numa pasta nova e copie seu `.env` principal para dentro de `checkpoint`, junto de `package.json`. Execute `npm install` e publique o `firestore.rules` atualizado. Os jogos, as listas, os gêneros e a permissão em `admins/{UID}` continuam compatíveis; não precisa recriar a conta nem o banco.
 
-Nome e foto acrescentam arquivos e regras: para esta atualização, use o projeto completo, não apenas `src/styles.css`. Se já criou um repositório, copie os arquivos do projeto sobre ele preservando seu `.env` e o diretório `.git`.
+Atividades, amizades e rotas acrescentam arquivos e regras: para esta atualização, use o projeto completo, não apenas `src/styles.css`. Se já criou um repositório, copie os arquivos do projeto sobre ele preservando seu `.env` e o diretório `.git`.
 
 ## 2. Configurar o Firebase
 
@@ -71,7 +76,7 @@ Use um projeto Firebase dedicado a esta biblioteca para manter seus outros aplic
 4. Copie todo o conteúdo de `firestore.rules` deste projeto para o editor de regras.
 5. Clique em **Publicar**.
 
-As regras permitem que cada usuário leia e altere somente os documentos da própria biblioteca. Elas também validam as notas, os gêneros, as listas e os campos dos jogos. A coleção será criada automaticamente quando o primeiro jogo for salvo na conta.
+As regras permitem que cada usuário altere somente os documentos da própria biblioteca. Amigos aceitos também podem ler a coleção, as opções pessoais, o perfil e o histórico; pedidos pendentes não liberam acesso. Elas também validam as notas, os gêneros, as listas e os campos dos jogos. A coleção será criada automaticamente quando o primeiro jogo for salvo na conta.
 
 ### Preencher o arquivo `.env`
 
@@ -154,7 +159,8 @@ Neste projeto, **listas e categorias são o mesmo conceito**: Jogando, Zerado, P
 | Criar e editar gêneros pessoais | Sim | Sim |
 | Usar as listas e os gêneros globais | Sim | Sim |
 | Criar, editar e arquivar opções globais | Não | Sim |
-| Ler ou editar a biblioteca de outra pessoa | Não | Não |
+| Ler biblioteca de um amigo aceito | Sim, somente leitura | Sim, somente leitura |
+| Editar a biblioteca de outra pessoa | Não | Não |
 | Promover uma conta pelo site | Não | Não |
 
 Os controles são acompanhados pelas regras do Firestore: uma conta padrão também não consegue alterar opções globais usando chamadas diretas ao banco.
@@ -191,7 +197,7 @@ Se você já usava a versão anterior, publique as novas regras e substitua os a
 
 Quando estiver conectado à sua conta, clique no nome ou avatar no topo para abrir **Seu perfil**. Edite o nome, escolha uma foto JPG/PNG/WebP de até 5 MB e clique em **Salvar perfil**. **Remover foto** também precisa ser confirmado em Salvar perfil. Sem nome personalizado, o site usa a parte do e-mail antes do `@`.
 
-A foto é recortada ao centro, reduzida para 256 × 256 e salva como JPEG em um documento privado do Firestore de até 180.000 caracteres. Assim não depende do Firebase Storage, que exige o plano Blaze. É um avatar pequeno; não é armazenamento de fotos originais. O perfil é específico deste app, separado dos dados do Firebase Authentication. As regras só permitem que o proprietário leia e altere o perfil.
+A foto é recortada ao centro, reduzida para 256 × 256 e salva como JPEG em um documento do Firestore de até 180.000 caracteres. Assim não depende do Firebase Storage, que exige o plano Blaze. É um avatar pequeno; não é armazenamento de fotos originais. O perfil é específico deste app, separado dos dados do Firebase Authentication. Somente o proprietário altera o perfil. Amigos aceitos também podem ler o nome e a foto.
 
 O nome e a foto ficam salvos no Firebase e acompanham sua conta nos outros dispositivos. Nenhum servidor adicional é necessário para o perfil.
 
@@ -199,7 +205,17 @@ O nome e a foto ficam salvos no Firebase e acompanham sua conta nos outros dispo
 
 | Arquivo | Função |
 | --- | --- |
-| `src/App.jsx` | Biblioteca, navegação, temas e reordenação |
+| `src/App.jsx` | HashRouter e rotas das páginas |
+| `src/layouts/AppLayout.jsx` | Menu, cabeçalho, tema, janelas e Outlet |
+| `src/pages/LibraryPage.jsx` | Biblioteca, filtros e reordenação |
+| `src/pages/ActivitiesPage.jsx` | Histórico próprio e dos amigos |
+| `src/pages/FriendsPage.jsx` | Pedidos e biblioteca compartilhada |
+| `src/pages/NotFoundPage.jsx` | Página 404 e link de retorno |
+| `src/hooks/useFriends.js` | Pedidos e amizades, com controle por conta |
+| `src/hooks/useFriendActivity.js` | Histórico dos amigos aceitos |
+| `src/hooks/useFriendLibrary.js` | Coleção do amigo, sem controles de edição |
+| `src/lib/activity.js` | Criação e apresentação dos eventos |
+| `.github/workflows/deploy.yml` | Build, testes e publicação no Pages |
 | `src/styles.css` | Visual escuro/claro e layout responsivo |
 | `src/components/GameCard.jsx` | Capa, nota e controles de cada jogo |
 | `src/components/GameEditor.jsx` | Formulário para adicionar, editar e excluir |
@@ -210,7 +226,7 @@ O nome e a foto ficam salvos no Firebase e acompanham sua conta nos outros dispo
 | `src/components/Cover.jsx` | Imagens e substituição de capas indisponíveis |
 | `src/hooks/useLibrary.js` | Leitura e salvamento local ou no Firestore |
 | `src/components/ProfileDialog.jsx` | Nome e upload de foto |
-| `src/hooks/useProfile.js` | Perfil privado no Firestore |
+| `src/hooks/useProfile.js` | Perfil da conta no Firestore |
 | `src/lib/profile.js` | Validação e redução da foto |
 | `src/hooks/useTaxonomy.js` | Listas, gêneros e reconhecimento do administrador |
 | `src/lib/firebase.js` | Configuração de Authentication e Firestore |
@@ -246,7 +262,7 @@ Cada opção tem `kind` (`list` ou `genre`), `label`, `color`, `icon`, `complete
 
 Para ampliar o catálogo, adicione uma imagem em `public/covers` e uma entrada em `src/data/catalog.json`, seguindo o formato existente. As capas e nomes são de seus respectivos titulares. Os links oficiais de origem estão em `sourceUrl` em cada entrada do catálogo.
 
-Perfil: `users/{uid}/profile/main`, com `displayName`, `photoData` e `updatedAt`. Um administrador continua sem acesso ao perfil ou à biblioteca de outras contas pelo cliente.
+Perfil: `users/{uid}/profile/main`, com `displayName`, `photoData` e `updatedAt`. A permissão de administrador não libera acesso ao perfil ou à biblioteca de outras contas. Esse acesso depende de uma amizade aceita.
 
 ## 5. Testes e versão de produção
 
@@ -310,7 +326,7 @@ Se aparecer `npm warn allow-scripts`, a versão do npm que imprime esse aviso ai
 | Minha conta não aparece como Admin | Confira `admins/{UID}` e o campo boolean `enabled: true` no mesmo projeto |
 | Capa por URL não aparece | Confira se o link abre diretamente uma imagem; alguns sites bloqueiam acesso externo |
 | Dados locais sumiram ao trocar de endereço | O armazenamento local é separado por navegador e endereço; use uma conta para acessar em outros lugares |
-| Meu perfil não carrega | Publique o `firestore.rules` da versão 1.2.1 e atualize a página |
+| Meu perfil não carrega | Publique o `firestore.rules` da versão 1.3.0 e atualize a página |
 | Teste das regras não inicia | Confira Java, conexão para baixar o emulador e portas 8080/4000 livres |
 
 ## Documentação usada
@@ -321,4 +337,32 @@ Se aparecer `npm warn allow-scripts`, a versão do npm que imprime esse aviso ai
 - [Começar com Cloud Firestore](https://firebase.google.com/docs/firestore/quickstart)
 - [Regras por usuário](https://firebase.google.com/docs/firestore/security/rules-conditions)
 
-O projeto foi preparado para execução local. Configure seu Firebase para ativar as contas e a biblioteca na nuvem.
+Para atualizar seu site já publicado, siga ATUALIZAR_1.3.0.md. Mantenha o mesmo Firebase e os mesmos secrets no GitHub.
+
+## Atividades, amigos e rotas (1.3.0)
+
+Em Atividades, escolha Todas, Minhas ou Amigos. Uma adição gera “Richard adicionou Hades”, e mudar a lista para Platinado gera “Richard platinou Hades”, com data e hora. Mudanças nas demais listas também aparecem. Editar apenas nota, texto ou capa, reordenar e excluir um jogo não cria eventos. Adicionar um jogo já zerado/platinado registra a adição e a conquista na data atual.
+
+O histórico começa nesta versão. Jogos já existentes continuam preservados, sem inventar datas de conquistas anteriores. O nome e o título registrados são os da época da ação. Excluir o jogo não apaga suas atividades. Na conta são mostradas até 100 atividades recentes por pessoa; no modo local são preservadas as últimas 500 junto dos jogos.
+
+Na nuvem, o jogo e os eventos são salvos no mesmo writeBatch e usam horário do servidor. Uma falha na gravação dos eventos também impede a gravação do jogo. As regras validam o jogo correspondente e não permitem alterar ou excluir eventos pelo cliente.
+
+Em Amigos, copie seu código e compartilhe com outra pessoa. Ela informa o código em Adicionar amigo; você recebe o pedido e decide aceitar ou recusar. O código é o UID, sem e-mail ou busca de usuários. Confira o código: um pedido para um código digitado errado não garante que uma conta existente o receba. Cancelar pedido desfaz uma solicitação enviada.
+
+Ao aceitar, ambas as pessoas compartilham nome, foto, jogos, avaliações, listas/gêneros pessoais e atividades. Amigos não podem editar documentos um do outro. Remover a amizade encerra as leituras pelo aplicativo e pelas regras. Conteúdo já visto ou copiado não pode ser recolhido. Administradores não têm acesso extra às bibliotecas.
+
+Estrutura adicional:
+- users/{uid}/activities/{eventId}: actorId, actorName, gameId, gameTitle, coverUrl, type, status, statusLabel, createdAt (Timestamp do servidor).
+- friendships/{fromId}~{toId}: fromId, toId, fromName, toName, status (pending/accepted), createdAt e updatedAt (Timestamp do servidor).
+
+As consultas usam o histórico ordenado por createdAt e solicitações filtradas pelos participantes. Nenhum índice composto adicional é necessário para essas consultas.
+
+Rotas:
+- /#/ — biblioteca.
+- /#/atividades — histórico.
+- /#/amigos — pedidos e coleções dos amigos.
+- /#/qualquer-rota-inexistente — página 404 do aplicativo.
+
+O # mantém links diretos e atualizações funcionando no GitHub Pages. Não é necessário configurar redirecionamentos no servidor. Uma URL fora do fragmento, como /Backlog_Games/rota, continua sendo tratada pelo próprio GitHub Pages. As páginas são rotas filhas de AppLayout e renderizadas em Outlet; useOutletContext compartilha a conta e os controles do layout.
+
+Documentação de navegação: https://reactrouter.com/start/declarative/routing

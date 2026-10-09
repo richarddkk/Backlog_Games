@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { collection, deleteDoc, doc, onSnapshot, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
 import { auth, db, firebaseConfigured, friendlyError } from '../lib/firebase.js';
 import { createExamples } from '../data/examples.js';
 import { GUEST_KEY, isStoredGame, reorderGames, sortGames, validateGame } from '../lib/model.js';
 import useTaxonomy from './useTaxonomy.js';
 import useProfile from './useProfile.js';
+import { buildActivities, isActivity, LOCAL_ACTIVITY_LIMIT, RECENT_ACTIVITY_LIMIT, readActivityDocument, sortActivities } from '../lib/activity.js';
 
 export function loadGuestGames() {
   const raw = localStorage.getItem(GUEST_KEY);
@@ -27,6 +28,10 @@ export default function useLibrary() {
   const [fromCache, setFromCache] = useState(false);
   const [saving, setSaving] = useState(0);
   const [retryKey, setRetryKey] = useState(0);
+  const [activities, setActivities] = useState([]);
+  const [activityReady, setActivityReady] = useState(false);
+  const [activityError, setActivityError] = useState('');
+  const activityScope = useRef({ uid: null, activities: [] });
   const context = useRef({ uid: null, ready: false, games: [] });
   const taxonomy = useTaxonomy(user, authReady);
   const profile = useProfile(user);
@@ -37,6 +42,8 @@ export default function useLibrary() {
       context.current = { uid: nextUser?.uid || null, ready: false, games: [] };
       setReady(false);
       setGames([]);
+      activityScope.current = { uid: nextUser?.uid || null, activities: [] };
+      setActivities([]); setActivityReady(false); setActivityError('');
       setUser(nextUser);
       setAuthReady(true);
     }, (failure) => { setError(friendlyError(failure)); setAuthReady(true); });
@@ -78,18 +85,52 @@ export default function useLibrary() {
     });
   }, [user?.uid, authReady, retryKey]);
 
+  useEffect(() => {
+    if (!authReady) return;
+    const uid = user?.uid || null;
+    const state = { uid, activities: [] };
+    activityScope.current = state;
+    setActivities([]); setActivityReady(false); setActivityError('');
+    if (!uid) {
+      try {
+        const raw = localStorage.getItem(GUEST_KEY);
+        const stored = raw ? JSON.parse(raw) : null;
+        const entries = stored?.activities || [];
+        if (!Array.isArray(entries) || !entries.every(isActivity)) throw new Error('O histórico local contém dados inválidos.');
+        state.activities = sortActivities(entries);
+        setActivities(state.activities); setActivityReady(true);
+      } catch (failure) { setActivityError(failure.message); }
+      return;
+    }
+    const recent = query(collection(db, 'users', uid, 'activities'), orderBy('createdAt', 'desc'), limit(RECENT_ACTIVITY_LIMIT));
+    const stop = onSnapshot(recent, snapshot => {
+      if (activityScope.current !== state) return;
+      const entries = snapshot.docs.map(readActivityDocument);
+      if (!entries.every(isActivity)) { setActivityReady(false); setActivityError('Há atividades inválidas no banco. Confira os documentos.'); return; }
+      state.activities = sortActivities(entries);
+      setActivities(state.activities); setActivityReady(true); setActivityError('');
+    }, failure => {
+      if (activityScope.current !== state) return;
+      setActivityReady(false); setActivityError(`${friendlyError(failure)} Publique as regras da versão 1.3 para usar o histórico.`);
+    });
+    return () => { if (activityScope.current === state) activityScope.current = { uid: null, activities: [] }; stop(); };
+  }, [user?.uid, authReady, retryKey]);
+
   const getContext = () => {
     const current = context.current;
     if (!current.ready) throw new Error('Aguarde a biblioteca carregar antes de alterar os jogos.');
     return current;
   };
 
-  const saveLocal = (records) => {
+  const saveLocal = (records, events = []) => {
     const sorted = sortGames(records);
-    try { localStorage.setItem(GUEST_KEY, JSON.stringify({ version: 1, games: sorted })); }
+    if (activityError) throw new Error('Não foi possível ler o histórico local. Corrija o armazenamento antes de editar para preservar seus dados.');
+    const entries = sortActivities([...events, ...activityScope.current.activities]).slice(0, LOCAL_ACTIVITY_LIMIT);
+    try { localStorage.setItem(GUEST_KEY, JSON.stringify({ version: 1, games: sorted, activities: entries })); }
     catch { throw new Error('O navegador não conseguiu salvar. Libere espaço ou permita o armazenamento local.'); }
     context.current = { uid: null, ready: true, games: sorted };
     setGames(sorted);
+    activityScope.current.activities = entries; setActivities(entries); setActivityReady(true);
   };
 
   const runWrite = async (operation) => {
@@ -107,8 +148,13 @@ export default function useLibrary() {
     const now = Math.max(Date.now(), previous?.createdAt || 0);
     const gameId = id || crypto.randomUUID();
     const record = { ...clean, rank: previous?.rank ?? Math.max(0, ...current.games.map((entry) => entry.rank)) + 1024, createdAt: previous?.createdAt ?? now, updatedAt: now };
-    if (current.uid) await setDoc(doc(db, 'users', current.uid, 'games', gameId), record);
-    else saveLocal([...current.games.filter((entry) => entry.id !== gameId), { ...record, id: gameId }]);
+    const events = buildActivities({ previous, game: record, gameId, actorId: current.uid, actorName: current.uid ? profile.displayName : 'Você', lists: taxonomy.lists, now });
+    if (current.uid) {
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'users', current.uid, 'games', gameId), record);
+      events.forEach(({ id: eventId, ...event }) => batch.set(doc(db, 'users', current.uid, 'activities', eventId), { ...event, createdAt: serverTimestamp() }));
+      await batch.commit();
+    } else saveLocal([...current.games.filter((entry) => entry.id !== gameId), { ...record, id: gameId }], events);
     return gameId;
   });
 
@@ -146,5 +192,5 @@ export default function useLibrary() {
 
   const retry = useCallback(() => setRetryKey((key) => key + 1), []);
   const logout = () => auth ? signOut(auth) : Promise.resolve();
-  return { user, games, ready, authReady, error, fromCache, taxonomy, profile, saving: saving > 0 || pending, saveGame, removeGame, reorder, clearLocal, retry, logout };
+  return { user, games, activities, activityReady, activityError, ready, authReady, error, fromCache, taxonomy, profile, saving: saving > 0 || pending, saveGame, removeGame, reorder, clearLocal, retry, logout };
 }

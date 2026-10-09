@@ -1,7 +1,8 @@
-import { afterEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
 import { cleanup } from '@testing-library/react';
 
 afterEach(() => cleanup());
+beforeEach(() => { window.history.replaceState(null, '', '/'); });
 if (!globalThis.ResizeObserver) globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
 if (!globalThis.PointerEvent) globalThis.PointerEvent = MouseEvent;
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};

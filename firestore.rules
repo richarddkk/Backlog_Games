@@ -4,6 +4,46 @@ service cloud.firestore {
     function owner(userId) {
       return request.auth != null && request.auth.uid == userId;
     }
+    function acceptedPair(path, fromId, toId) {
+      return exists(path) && get(path).data.status == 'accepted'
+        && get(path).data.fromId == fromId && get(path).data.toId == toId;
+    }
+    function friend(userId) {
+      return request.auth != null && (
+        acceptedPair(/databases/$(database)/documents/friendships/$(request.auth.uid + '~' + userId), request.auth.uid, userId)
+        || acceptedPair(/databases/$(database)/documents/friendships/$(userId + '~' + request.auth.uid), userId, request.auth.uid)
+      );
+    }
+    function validFriendship() {
+      let item = request.resource.data;
+      return item.keys().hasAll(['fromId', 'toId', 'fromName', 'toName', 'status', 'createdAt', 'updatedAt'])
+        && item.keys().hasOnly(['fromId', 'toId', 'fromName', 'toName', 'status', 'createdAt', 'updatedAt'])
+        && item.fromId is string && item.fromId.matches('[a-zA-Z0-9_-]{1,128}')
+        && item.toId is string && item.toId.matches('[a-zA-Z0-9_-]{1,128}')
+        && item.fromId != item.toId
+        && item.fromName is string && item.fromName.size() > 0 && item.fromName.size() <= 60
+        && item.toName is string && item.toName.size() <= 60
+        && item.status in ['pending', 'accepted']
+        && item.createdAt is timestamp && item.updatedAt is timestamp;
+    }
+    function validActivity(userId) {
+      let item = request.resource.data;
+      let gamePath = /databases/$(database)/documents/users/$(userId)/games/$(item.gameId);
+      return item.keys().hasAll(['actorId', 'actorName', 'gameId', 'gameTitle', 'coverUrl', 'type', 'status', 'statusLabel', 'createdAt'])
+        && item.keys().hasOnly(['actorId', 'actorName', 'gameId', 'gameTitle', 'coverUrl', 'type', 'status', 'statusLabel', 'createdAt'])
+        && item.actorId == userId
+        && item.actorName is string && item.actorName.size() > 0 && item.actorName.size() <= 60
+        && item.gameId is string && item.gameId.matches('[a-zA-Z0-9_-]{1,128}')
+        && item.gameTitle is string && item.gameTitle.size() > 0 && item.gameTitle.size() <= 120
+        && item.coverUrl is string && item.coverUrl.size() <= 2000
+        && item.status is string && item.statusLabel is string && item.statusLabel.size() > 0 && item.statusLabel.size() <= 60
+        && item.createdAt is timestamp && item.createdAt == request.time
+        && getAfter(gamePath).data.title == item.gameTitle
+        && getAfter(gamePath).data.coverUrl == item.coverUrl
+        && getAfter(gamePath).data.status == item.status
+        && ((item.type == 'added' && !exists(gamePath))
+          || (item.type == 'status' && (!exists(gamePath) || get(gamePath).data.status != item.status)));
+    }
     function admin() {
       return request.auth != null
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
@@ -57,13 +97,34 @@ service cloud.firestore {
         && game.createdAt is number && game.createdAt >= 0
         && game.updatedAt is number && game.updatedAt >= game.createdAt;
     }
+    match /friendships/{friendshipId} {
+      allow read: if request.auth != null && (resource.data.fromId == request.auth.uid || resource.data.toId == request.auth.uid);
+      allow create: if request.auth != null && validFriendship()
+        && request.resource.data.fromId == request.auth.uid
+        && friendshipId == request.resource.data.fromId + '~' + request.resource.data.toId
+        && request.resource.data.status == 'pending' && request.resource.data.toName == ''
+        && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time
+        && !exists(/databases/$(database)/documents/friendships/$(request.resource.data.toId + '~' + request.resource.data.fromId));
+      allow update: if request.auth != null && validFriendship()
+        && resource.data.toId == request.auth.uid && resource.data.status == 'pending'
+        && request.resource.data.status == 'accepted' && request.resource.data.toName.size() > 0
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'toName', 'updatedAt']);
+      allow delete: if request.auth != null && (resource.data.fromId == request.auth.uid || resource.data.toId == request.auth.uid);
+    }
+    match /users/{userId}/activities/{activityId} {
+      allow read: if owner(userId) || friend(userId);
+      allow create: if owner(userId) && validActivity(userId);
+      allow update, delete: if false;
+    }
     match /admins/{userId} {
       allow get: if owner(userId);
       // A promoção de administrador acontece no Console do Firebase ou Admin SDK.
       allow list, create, update, delete: if false;
     }
     match /users/{userId}/profile/{profileId} {
-      allow read, delete: if owner(userId) && profileId == 'main';
+      allow read: if profileId == 'main' && (owner(userId) || friend(userId));
+      allow delete: if owner(userId) && profileId == 'main';
       allow create, update: if owner(userId) && profileId == 'main'
         && request.resource.data.keys().hasAll(['displayName', 'photoData', 'updatedAt'])
         && request.resource.data.keys().hasOnly(['displayName', 'photoData', 'updatedAt'])
@@ -82,7 +143,7 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /users/{userId}/options/{optionId} {
-      allow read: if owner(userId);
+      allow read: if owner(userId) || friend(userId);
       allow create: if owner(userId) && validOption() && optionId.matches('personal-[a-zA-Z0-9-]{1,80}');
       allow update: if owner(userId) && validOption() && optionId.matches('personal-[a-zA-Z0-9-]{1,80}')
         && request.resource.data.kind == resource.data.kind
@@ -90,7 +151,8 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /users/{userId}/games/{gameId} {
-      allow read, delete: if owner(userId);
+      allow read: if owner(userId) || friend(userId);
+      allow delete: if owner(userId);
       allow create: if owner(userId) && validGame()
         && usableOption(userId, request.resource.data.status, 'list')
         && usableOption(userId, request.resource.data.genre, 'genre');

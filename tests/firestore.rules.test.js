@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, query, or, where } from 'firebase/firestore';
 
 let environment;
 const game = { title: 'Hades', genre: 'Roguelike', status: 'completed', rating: 4.5, coverUrl: '/covers/1145360.jpg', review: 'Muito bom', rank: 1024, createdAt: 100, updatedAt: 100 };
@@ -119,5 +119,88 @@ describe('Perfil pessoal', () => {
     await assertSucceeds(updateDoc(reference, { photoData: '', displayName: 'Richard' }));
     await grantAdmin('bob');
     await assertFails(getDoc(doc(bob, 'users', 'alice', 'profile', 'main')));
+  });
+});
+
+const requestFriendship = client => setDoc(doc(client, 'friendships', 'alice~bob'), { fromId: 'alice', toId: 'bob', fromName: 'Alice', toName: '', status: 'pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+const acceptFriendship = client => updateDoc(doc(client, 'friendships', 'alice~bob'), { toName: 'Bob', status: 'accepted', updatedAt: serverTimestamp() });
+const activity = { actorId: 'alice', actorName: 'Alice', gameId: 'hades', gameTitle: 'Hades', coverUrl: game.coverUrl, type: 'added', status: 'completed', statusLabel: 'Zerado', createdAt: serverTimestamp() };
+
+describe('Atividades e consentimento de amizade', () => {
+  it('somente o destinatário aceita; um pedido pendente não libera acesso e a remoção revoga a leitura', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const bob = environment.authenticatedContext('bob').firestore();
+    const charlie = environment.authenticatedContext('charlie').firestore();
+    await assertSucceeds(setDoc(ref(alice), game));
+    await assertSucceeds(setDoc(doc(alice, 'users', 'alice', 'profile', 'main'), { displayName: 'Alice', photoData: '', updatedAt: 100 }));
+    await assertSucceeds(setDoc(doc(alice, 'users', 'alice', 'options', 'personal-replay'), option));
+    await assertSucceeds(requestFriendship(alice));
+    await assertSucceeds(getDocs(query(collection(bob, 'friendships'), or(where('fromId', '==', 'bob'), where('toId', '==', 'bob')))));
+    await assertFails(getDocs(collection(bob, 'friendships')));
+    await assertFails(getDoc(ref(bob)));
+    await assertFails(acceptFriendship(alice));
+    await assertFails(acceptFriendship(charlie));
+    await assertSucceeds(acceptFriendship(bob));
+    await assertSucceeds(getDoc(ref(bob)));
+    await assertSucceeds(getDocs(collection(bob, 'users', 'alice', 'games')));
+    await assertSucceeds(getDoc(doc(bob, 'users', 'alice', 'profile', 'main')));
+    await assertSucceeds(getDocs(collection(bob, 'users', 'alice', 'options')));
+    await assertSucceeds(setDoc(ref(bob, 'bob'), game));
+    await assertSucceeds(getDoc(ref(alice, 'bob')));
+    await assertFails(updateDoc(ref(bob), { rating: 5 }));
+    await assertFails(deleteDoc(ref(bob)));
+    await assertFails(getDoc(ref(charlie)));
+    await assertFails(deleteDoc(doc(charlie, 'friendships', 'alice~bob')));
+    await assertSucceeds(deleteDoc(doc(alice, 'friendships', 'alice~bob')));
+    await assertFails(getDoc(ref(bob)));
+    await assertFails(getDoc(ref(alice, 'bob')));
+  });
+
+  it('impede forjar uma amizade aceita ou trocar os participantes do pedido', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const bob = environment.authenticatedContext('bob').firestore();
+    const fields = { fromId: 'alice', toId: 'bob', fromName: 'Alice', toName: 'Bob', status: 'accepted', createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    await assertFails(setDoc(doc(alice, 'friendships', 'alice~bob'), fields));
+    await assertFails(setDoc(doc(bob, 'friendships', 'alice~bob'), { ...fields, status: 'pending', toName: '' }));
+    await assertSucceeds(requestFriendship(alice));
+    await assertFails(updateDoc(doc(bob, 'friendships', 'alice~bob'), { fromId: 'charlie', status: 'accepted', toName: 'Bob', updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(bob, 'friendships', 'alice~bob'), { createdAt: serverTimestamp(), status: 'accepted', toName: 'Bob', updatedAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(bob, 'friendships', 'bob~alice'), { ...fields, fromId: 'bob', toId: 'alice', status: 'pending', toName: '' }));
+    await assertSucceeds(deleteDoc(doc(bob, 'friendships', 'alice~bob')));
+  });
+
+  it('salva jogo e atividade na mesma operação, valida a conquista e mantém o histórico imutável', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const bob = environment.authenticatedContext('bob').firestore();
+    const eventRef = doc(alice, 'users', 'alice', 'activities', 'added');
+    const batch = writeBatch(alice);
+    batch.set(ref(alice), game); batch.set(eventRef, activity);
+    await assertSucceeds(batch.commit());
+    await assertSucceeds(getDocs(collection(alice, 'users', 'alice', 'activities')));
+    await assertFails(getDoc(doc(bob, 'users', 'alice', 'activities', 'added')));
+    await assertFails(updateDoc(eventRef, { actorName: 'Forjado' }));
+    await assertFails(deleteDoc(eventRef));
+    await assertFails(setDoc(doc(alice, 'users', 'alice', 'activities', 'fake'), { ...activity, type: 'status' }));
+    const platinum = writeBatch(alice);
+    platinum.update(ref(alice), { status: 'platinum', updatedAt: 200 });
+    platinum.set(doc(alice, 'users', 'alice', 'activities', 'platinum'), { ...activity, type: 'status', status: 'platinum', statusLabel: 'Platinado' });
+    await assertSucceeds(platinum.commit());
+    await assertSucceeds(requestFriendship(alice)); await assertSucceeds(acceptFriendship(bob));
+    await assertSucceeds(getDocs(collection(bob, 'users', 'alice', 'activities')));
+    await assertFails(setDoc(doc(bob, 'users', 'alice', 'activities', 'invasion'), activity));
+    await assertSucceeds(deleteDoc(ref(alice)));
+    await assertSucceeds(getDoc(eventRef));
+    await assertSucceeds(deleteDoc(doc(bob, 'friendships', 'alice~bob')));
+    await assertFails(getDoc(doc(bob, 'users', 'alice', 'activities', 'added')));
+  });
+
+  it('um histórico inválido impede a gravação parcial do jogo', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const batch = writeBatch(alice);
+    batch.set(ref(alice), game);
+    batch.set(doc(alice, 'users', 'alice', 'activities', 'fake'), { ...activity, actorId: 'bob' });
+    await assertFails(batch.commit());
+    const snapshot = await assertSucceeds(getDoc(ref(alice)));
+    if (snapshot.exists()) throw new Error('A gravação deveria ser atômica.');
   });
 });
