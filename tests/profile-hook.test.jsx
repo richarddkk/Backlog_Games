@@ -5,7 +5,7 @@ vi.mock('../src/lib/firebase.js', () => ({ db: {}, friendlyError: error => error
 vi.mock('firebase/firestore', () => ({
   doc: (_, ...path) => path.join('/'),
   onSnapshot: (path, receive, fail) => { const listener = { path, receive, fail, stop: vi.fn() }; state.listeners.push(listener); return listener.stop; },
-  setDoc: (...args) => state.write(...args),
+  writeBatch: () => ({ set: (...args) => state.write(...args), commit: async () => {} }),
 }));
 import useProfile from '../src/hooks/useProfile.js';
 beforeEach(() => { state.listeners.length = 0; state.write.mockClear(); });
@@ -20,6 +20,7 @@ it('carrega e salva o perfil individual sem outra integração e ignora eventos 
   expect(page.result.current.displayName).toBe('Richie');
   await act(async () => page.result.current.save({ displayName: 'Richard', photoData: 'data:image/jpeg;base64,YQ==' }));
   expect(state.write).toHaveBeenCalledWith('users/alice/profile/main', expect.objectContaining({ displayName: 'Richard', photoData: 'data:image/jpeg;base64,YQ==', updatedAt: expect.any(Number) }));
+  expect(state.write).toHaveBeenCalledWith('publicProfiles/alice', expect.objectContaining({ displayName: 'Richard', bio: '', libraryVisibility: 'friends' }));
   page.rerender({ user: bob });
   expect(state.listeners[0].stop).toHaveBeenCalled();
   act(() => state.listeners[0].receive({ exists: () => true, data: () => ({ displayName: 'Nome antigo', photoData: '' }) }));

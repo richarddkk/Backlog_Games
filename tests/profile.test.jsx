@@ -15,8 +15,10 @@ describe('Perfil pessoal', () => {
     await actions.type(screen.getByLabelText('Nome de exibição'), 'Richie');
     await actions.click(screen.getByRole('button', { name: 'Remover foto' }));
     expect(data.save).not.toHaveBeenCalled();
+    await actions.type(screen.getByLabelText('Sobre você'), 'Adoro RPGs.');
+    await actions.selectOptions(screen.getByLabelText('Quem pode ver sua biblioteca?'), 'public');
     await actions.click(screen.getByRole('button', { name: 'Salvar perfil' }));
-    expect(data.save).toHaveBeenCalledWith({ displayName: 'Richie', photoData: '' });
+    expect(data.save).toHaveBeenCalledWith({ displayName: 'Richie', photoData: '', bio: 'Adoro RPGs.', libraryVisibility: 'public' });
     await screen.findByText('Seu perfil foi atualizado.');
   });
   it('preenche o formulário quando o perfil termina de carregar e preserva falhas de salvamento', async () => {

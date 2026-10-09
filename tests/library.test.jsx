@@ -19,9 +19,10 @@ describe('Biblioteca local', () => {
     await user.selectOptions(screen.getByLabelText('Sua lista'), 'completed');
     await user.click(screen.getByRole('button', { name: 'Avaliar com 4,5 estrelas' }));
     await user.type(screen.getByLabelText(/Sua avaliação/), 'Combate muito bom.');
+    await user.type(screen.getByLabelText(/Horas de jogo/), '42.5');
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Adicionar jogo', exact: true }));
     await screen.findByRole('button', { name: 'Editar Hades', exact: true });
-    expect(readSaved()[0]).toMatchObject({ title: 'Hades', rating: 4.5, status: 'completed', genre: 'Roguelike', review: 'Combate muito bom.', coverUrl: '/covers/1145360.jpg' });
+    expect(readSaved()[0]).toMatchObject({ title: 'Hades', hoursPlayed: 42.5, rating: 4.5, status: 'completed', genre: 'Roguelike', review: 'Combate muito bom.', coverUrl: '/covers/1145360.jpg' });
     await user.click(screen.getByRole('button', { name: 'Editar Hades', exact: true }));
     await user.selectOptions(screen.getByLabelText('Sua lista'), 'platinum');
     await user.click(screen.getByRole('button', { name: 'Salvar alterações' }));

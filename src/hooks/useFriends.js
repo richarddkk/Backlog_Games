@@ -29,7 +29,7 @@ export default function useFriends(user, authReady, displayName) {
     }, failure => {
       if (scope.current !== session) return;
       session.ready = false;
-      setState({ ...session, error: `Não foi possível carregar os amigos. ${friendlyError(failure)} Publique as regras da versão 1.3.` });
+      setState({ ...session, error: `Não foi possível carregar os amigos. ${friendlyError(failure)} Publique as regras da versão 1.6.` });
     });
     return () => { if (scope.current === session) scope.current = null; stop(); };
   }, [uid, authReady, attempt]);

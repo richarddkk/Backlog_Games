@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/r/:authorId/:gameId", "destination": "/api/review?u=:authorId&g=:gameId" },
+    { "source": "/card/:authorId/:filename", "destination": "/api/card?u=:authorId&g=:filename" }
+  ],
+  "functions": {
+    "api/review.mjs": { "maxDuration": 15 },
+    "api/card.mjs": { "maxDuration": 20, "includeFiles": "assets/**" }
+  }
+}

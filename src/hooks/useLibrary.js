@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore';
+import { isStoredReview, mergeReview, makeReviewPost } from '../lib/reviews.js';
 import { auth, db, firebaseConfigured, friendlyError } from '../lib/firebase.js';
 import { createExamples } from '../data/examples.js';
 import { GUEST_KEY, isStoredGame, reorderGames, sortGames, validateGame } from '../lib/model.js';
@@ -65,24 +66,34 @@ export default function useLibrary() {
       } catch { setGames([]); setError('Não foi possível ler os jogos locais. Os dados foram preservados. Verifique se o navegador permite armazenamento.'); }
       return;
     }
-    return onSnapshot(collection(db, 'users', uid, 'games'), { includeMetadataChanges: true }, (snapshot) => {
-      if (context.current.uid !== uid) return;
-      const records = snapshot.docs.map((record) => ({ ...record.data(), id: record.id }));
-      if (!records.every(isStoredGame)) {
-        context.current.ready = false;
-        setReady(false); setError('Existem jogos com dados inválidos na conta. Confira os documentos no Firestore antes de editar.');
-        return;
-      }
-      const sorted = sortGames(records);
+    let active = true, failed = false, records = [], reviews = new Map(), gamesReady = false, reviewsReady = false;
+    const publish = () => {
+      if (!active || failed || context.current.uid !== uid || !gamesReady || !reviewsReady) return;
+      const sorted = sortGames(records.map(game => mergeReview(game, reviews.get(game.id))));
       context.current = { uid, ready: true, games: sorted };
       setGames(sorted); setReady(true); setError('');
-      setPending(snapshot.metadata.hasPendingWrites);
-      setFromCache(snapshot.metadata.fromCache);
-    }, (failure) => {
-      if (context.current.uid !== uid) return;
-      context.current.ready = false;
-      setReady(false); setError(friendlyError(failure));
-    });
+    };
+    const fail = failure => {
+      if (!active || context.current.uid !== uid) return;
+      failed = true; context.current.ready = false; setReady(false);
+      setError(`${friendlyError(failure)} Confira se as regras da versão 1.6 foram publicadas.`);
+    };
+    const stops = [
+      onSnapshot(collection(db, 'users', uid, 'games'), { includeMetadataChanges: true }, snapshot => {
+        if (!active || context.current.uid !== uid) return;
+        records = snapshot.docs.map(record => ({ ...record.data(), id: record.id }));
+        if (!records.every(isStoredGame)) { gamesReady = false; fail(new Error('Existem jogos inválidos na conta.')); return; }
+        gamesReady = true;
+        setPending(snapshot.metadata.hasPendingWrites); setFromCache(snapshot.metadata.fromCache); publish();
+      }, fail),
+      onSnapshot(collection(db, 'users', uid, 'reviews'), { includeMetadataChanges: true }, snapshot => {
+        if (!active || context.current.uid !== uid) return;
+        const entries = snapshot.docs.map(record => [record.id, record.data()]);
+        if (!entries.every(([, review]) => isStoredReview(review))) { reviewsReady = false; fail(new Error('Existem avaliações inválidas na conta.')); return; }
+        reviews = new Map(entries); reviewsReady = true; publish();
+      }, fail),
+    ];
+    return () => { active = false; stops.forEach(stop => stop()); };
   }, [user?.uid, authReady, retryKey]);
 
   useEffect(() => {
@@ -111,7 +122,7 @@ export default function useLibrary() {
       setActivities(state.activities); setActivityReady(true); setActivityError('');
     }, failure => {
       if (activityScope.current !== state) return;
-      setActivityReady(false); setActivityError(`${friendlyError(failure)} Publique as regras da versão 1.3 para usar o histórico.`);
+      setActivityReady(false); setActivityError(`${friendlyError(failure)} Publique as regras da versão 1.6 para usar o histórico.`);
     });
     return () => { if (activityScope.current === state) activityScope.current = { uid: null, activities: [] }; stop(); };
   }, [user?.uid, authReady, retryKey]);
@@ -151,7 +162,13 @@ export default function useLibrary() {
     const events = buildActivities({ previous, game: record, gameId, actorId: current.uid, actorName: current.uid ? profile.displayName : 'Você', lists: taxonomy.lists, now });
     if (current.uid) {
       const batch = writeBatch(db);
-      batch.set(doc(db, 'users', current.uid, 'games', gameId), record);
+      const { review, reviewVisibility, ...sharedGame } = record;
+      batch.set(doc(db, 'users', current.uid, 'games', gameId), { ...sharedGame, review: '' });
+      batch.set(doc(db, 'users', current.uid, 'reviews', gameId), { text: review, visibility: reviewVisibility, updatedAt: now });
+      const publication = doc(db, 'publicReviews', `${current.uid}~${gameId}`);
+      if (reviewVisibility === 'public' && review) {
+        batch.set(publication, makeReviewPost({ actorId: current.uid, actorName: profile.displayName, gameId, game: record, lists: taxonomy.lists, genres: taxonomy.genres, updatedAt: serverTimestamp() }));
+      } else batch.delete(publication);
       events.forEach(({ id: eventId, ...event }) => batch.set(doc(db, 'users', current.uid, 'activities', eventId), { ...event, createdAt: serverTimestamp() }));
       await batch.commit();
     } else saveLocal([...current.games.filter((entry) => entry.id !== gameId), { ...record, id: gameId }], events);
@@ -160,7 +177,13 @@ export default function useLibrary() {
 
   const removeGame = (id) => runWrite(async () => {
     const current = getContext();
-    if (current.uid) await deleteDoc(doc(db, 'users', current.uid, 'games', id));
+    if (current.uid) {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'users', current.uid, 'games', id));
+      batch.delete(doc(db, 'users', current.uid, 'reviews', id));
+      batch.delete(doc(db, 'publicReviews', `${current.uid}~${id}`));
+      await batch.commit();
+    }
     else saveLocal(current.games.filter((entry) => entry.id !== id));
   });
 

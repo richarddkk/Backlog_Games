@@ -85,7 +85,8 @@ service cloud.firestore {
     function validGame() {
       let game = request.resource.data;
       return game.keys().hasAll(['title', 'genre', 'status', 'rating', 'coverUrl', 'review', 'rank', 'createdAt', 'updatedAt'])
-        && game.keys().hasOnly(['title', 'genre', 'status', 'rating', 'coverUrl', 'review', 'rank', 'createdAt', 'updatedAt'])
+        && game.keys().hasOnly(['title', 'genre', 'status', 'rating', 'coverUrl', 'review', 'rank', 'createdAt', 'updatedAt', 'hoursPlayed'])
+        && game.get('hoursPlayed', 0) is number && game.get('hoursPlayed', 0) >= 0 && game.get('hoursPlayed', 0) <= 1000000
         && game.title is string && game.title.size() > 0 && game.title.size() <= 120
         && game.genre is string && game.genre.size() > 0 && game.genre.size() <= 100 && !game.genre.matches('.*[/].*')
         && game.status is string && game.status.size() > 0 && game.status.size() <= 100 && !game.status.matches('.*[/].*')
@@ -112,6 +113,64 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'toName', 'updatedAt']);
       allow delete: if request.auth != null && (resource.data.fromId == request.auth.uid || resource.data.toId == request.auth.uid);
     }
+    function publicReviewPath(userId, gameId) {
+      return /databases/$(database)/documents/publicReviews/$(userId + '~' + gameId);
+    }
+    function validPublication(userId, gameId, item) {
+      let game = getAfter(/databases/$(database)/documents/users/$(userId)/games/$(gameId)).data;
+      let review = getAfter(/databases/$(database)/documents/users/$(userId)/reviews/$(gameId)).data;
+      return item.keys().hasAll(['actorId', 'actorName', 'gameId', 'gameTitle', 'coverUrl', 'rating', 'status', 'statusLabel', 'genreLabel', 'text', 'visibility', 'updatedAt'])
+        && item.keys().hasOnly(['actorId', 'actorName', 'gameId', 'gameTitle', 'coverUrl', 'rating', 'status', 'statusLabel', 'genreLabel', 'text', 'visibility', 'updatedAt', 'hoursPlayed'])
+        && item.get('hoursPlayed', 0) == game.get('hoursPlayed', 0)
+        && item.actorId == userId && item.gameId == gameId
+        && userId.matches('[a-zA-Z0-9_-]{1,128}') && gameId.matches('[a-zA-Z0-9_-]{1,128}')
+        && item.actorName is string && item.actorName.size() > 0 && item.actorName.size() <= 60
+        && item.visibility == 'public' && review.visibility == 'public'
+        && item.text is string && item.text.size() > 0 && item.text.size() <= 3000 && item.text == review.text
+        && item.gameTitle == game.title && item.coverUrl == game.coverUrl
+        && item.rating == game.rating && item.status == game.status
+        && item.statusLabel is string && item.statusLabel.size() > 0 && item.statusLabel.size() <= 100
+        && item.genreLabel is string && item.genreLabel.size() > 0 && item.genreLabel.size() <= 100
+        && item.updatedAt is timestamp;
+    }
+    function publicationState(userId, gameId) {
+      let reviewPath = /databases/$(database)/documents/users/$(userId)/reviews/$(gameId);
+      let publicPath = publicReviewPath(userId, gameId);
+      return !existsAfter(reviewPath)
+        ? !existsAfter(publicPath)
+        : ((getAfter(reviewPath).data.visibility == 'public' && getAfter(reviewPath).data.text.size() > 0)
+          ? (existsAfter(publicPath) && validPublication(userId, gameId, getAfter(publicPath).data))
+          : !existsAfter(publicPath));
+    }
+    match /publicReviews/{postId} {
+      // Aqui só entram cópias de reviews explicitamente públicas.
+      allow read: if true;
+      allow create, update: if request.auth != null
+        && postId == request.auth.uid + '~' + request.resource.data.gameId
+        && validPublication(request.auth.uid, request.resource.data.gameId, request.resource.data)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if request.auth != null
+        && request.auth.uid.matches('[a-zA-Z0-9_-]{1,128}')
+        && postId.matches(request.auth.uid + '~[a-zA-Z0-9_-]{1,128}')
+        && (!existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)/reviews/$(postId.split('~')[1]))
+          || getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/reviews/$(postId.split('~')[1])).data.visibility != 'public'
+          || getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/reviews/$(postId.split('~')[1])).data.text == '');
+    }
+    match /users/{userId}/reviews/{gameId} {
+      allow get: if owner(userId) || (friend(userId) &&
+        (!exists(/databases/$(database)/documents/users/$(userId)/reviews/$(gameId)) || resource.data.visibility in ['friends', 'public']));
+      // Amigos precisam filtrar visibility; uma consulta sem filtro é negada.
+      allow list: if owner(userId) || (friend(userId) && resource.data.visibility in ['friends', 'public']);
+      allow delete: if owner(userId) && !existsAfter(publicReviewPath(userId, gameId));
+      allow create, update: if owner(userId)
+        && request.resource.data.keys().hasAll(['text', 'visibility', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['text', 'visibility', 'updatedAt'])
+        && request.resource.data.text is string && request.resource.data.text.size() <= 3000
+        && request.resource.data.visibility in ['private', 'friends', 'public']
+        && request.resource.data.updatedAt is number && request.resource.data.updatedAt >= 0
+        && getAfter(/databases/$(database)/documents/users/$(userId)/games/$(gameId)).data.review == ''
+        && publicationState(userId, gameId);
+    }
     match /users/{userId}/activities/{activityId} {
       allow read: if owner(userId) || friend(userId);
       allow create: if owner(userId) && validActivity(userId);
@@ -122,19 +181,74 @@ service cloud.firestore {
       // A promoção de administrador acontece no Console do Firebase ou Admin SDK.
       allow list, create, update, delete: if false;
     }
+    function validProfile(item) {
+      return item.keys().hasAll(['displayName', 'photoData', 'updatedAt'])
+        && item.keys().hasOnly(['displayName', 'photoData', 'updatedAt', 'bio', 'libraryVisibility'])
+        && item.displayName is string && item.displayName.size() <= 60
+        && item.photoData is string && item.photoData.size() <= 180000
+        && (item.photoData == '' || item.photoData.matches('data:image/jpeg;base64,[a-zA-Z0-9+/=]+'))
+        && item.get('bio', '') is string && item.get('bio', '').size() <= 600
+        && item.get('libraryVisibility', 'friends') in ['friends', 'public']
+        && item.updatedAt is number && item.updatedAt >= 0;
+    }
+    function validPublicProfile(userId, item) {
+      let source = getAfter(/databases/$(database)/documents/users/$(userId)/profile/main).data;
+      return validProfile(item)
+        && item.keys().hasAll(['bio', 'libraryVisibility'])
+        && item.displayName == source.displayName && item.photoData == source.photoData
+        && item.bio == source.get('bio', '')
+        && item.libraryVisibility == source.get('libraryVisibility', 'friends')
+        && item.updatedAt == source.updatedAt;
+    }
+    function publicLibrary(userId) {
+      let path = /databases/$(database)/documents/publicProfiles/$(userId);
+      return exists(path) && get(path).data.libraryVisibility == 'public';
+    }
+    match /publicProfiles/{userId} {
+      allow read: if true;
+      allow create, update: if owner(userId) && validPublicProfile(userId, request.resource.data);
+      allow delete: if owner(userId) && !existsAfter(/databases/$(database)/documents/users/$(userId)/profile/main);
+    }
     match /users/{userId}/profile/{profileId} {
       allow read: if profileId == 'main' && (owner(userId) || friend(userId));
-      allow delete: if owner(userId) && profileId == 'main';
-      allow create, update: if owner(userId) && profileId == 'main'
-        && request.resource.data.keys().hasAll(['displayName', 'photoData', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['displayName', 'photoData', 'updatedAt'])
-        && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 60
-        && request.resource.data.photoData is string && request.resource.data.photoData.size() <= 180000
-        && (request.resource.data.photoData == '' || request.resource.data.photoData.matches('data:image/jpeg;base64,[a-zA-Z0-9+/=]+'))
-        && request.resource.data.updatedAt is number && request.resource.data.updatedAt >= 0;
+      allow delete: if owner(userId) && profileId == 'main'
+        && !existsAfter(/databases/$(database)/documents/publicProfiles/$(userId));
+      allow create, update: if owner(userId) && profileId == 'main' && validProfile(request.resource.data)
+        && (!exists(/databases/$(database)/documents/publicProfiles/$(userId))
+          || validPublicProfile(userId, getAfter(/databases/$(database)/documents/publicProfiles/$(userId)).data));
+    }
+    function canTalk(pairId) {
+      let people = pairId.split('~');
+      return request.auth != null && people.size() == 2 && people[0] != people[1]
+        && people[0].matches('[a-zA-Z0-9_-]{1,128}') && people[1].matches('[a-zA-Z0-9_-]{1,128}')
+        && request.auth.uid in people
+        && friend(people[0] == request.auth.uid ? people[1] : people[0]);
+    }
+    function validConversation(pairId, item) {
+      return item.keys().hasAll(['participants', 'updatedAt'])
+        && item.keys().hasOnly(['participants', 'updatedAt'])
+        && item.participants == pairId.split('~')
+        && item.updatedAt is timestamp && item.updatedAt == request.time;
+    }
+    match /conversations/{pairId} {
+      allow get: if canTalk(pairId);
+      allow list, delete: if false;
+      allow create, update: if canTalk(pairId) && validConversation(pairId, request.resource.data);
+      match /messages/{messageId} {
+        allow read: if canTalk(pairId);
+        allow create: if canTalk(pairId)
+          && request.resource.data.keys().hasAll(['senderId', 'text', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['senderId', 'text', 'createdAt'])
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.text is string && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000 && request.resource.data.text.matches('(?s).*[^\\s].*')
+          && request.resource.data.createdAt == request.time
+          && getAfter(/databases/$(database)/documents/conversations/$(pairId)).data.participants == pairId.split('~');
+        allow update, delete: if false;
+      }
     }
     match /taxonomy/{optionId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create: if admin() && validOption() && validGlobalId(optionId);
       allow update: if admin() && validOption() && validGlobalId(optionId)
         && request.resource.data.kind == resource.data.kind
@@ -143,20 +257,25 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /users/{userId}/options/{optionId} {
-      allow read: if owner(userId) || friend(userId);
+      allow read: if owner(userId) || friend(userId) || publicLibrary(userId);
       allow create: if owner(userId) && validOption() && optionId.matches('personal-[a-zA-Z0-9-]{1,80}');
       allow update: if owner(userId) && validOption() && optionId.matches('personal-[a-zA-Z0-9-]{1,80}')
         && request.resource.data.kind == resource.data.kind
         && request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if false;
     }
+    function protectedReview(userId, gameId) {
+      return (!existsAfter(/databases/$(database)/documents/users/$(userId)/reviews/$(gameId)) || request.resource.data.review == '')
+        && publicationState(userId, gameId);
+    }
     match /users/{userId}/games/{gameId} {
-      allow read: if owner(userId) || friend(userId);
-      allow delete: if owner(userId);
-      allow create: if owner(userId) && validGame()
+      allow read: if owner(userId) || friend(userId) || (publicLibrary(userId) && resource.data.review == '');
+      allow delete: if owner(userId) && !existsAfter(publicReviewPath(userId, gameId))
+        && !existsAfter(/databases/$(database)/documents/users/$(userId)/reviews/$(gameId));
+      allow create: if owner(userId) && validGame() && protectedReview(userId, gameId)
         && usableOption(userId, request.resource.data.status, 'list')
         && usableOption(userId, request.resource.data.genre, 'genre');
-      allow update: if owner(userId) && validGame()
+      allow update: if owner(userId) && validGame() && protectedReview(userId, gameId)
         && request.resource.data.createdAt == resource.data.createdAt
         && (request.resource.data.status == resource.data.status || usableOption(userId, request.resource.data.status, 'list'))
         && (request.resource.data.genre == resource.data.genre || usableOption(userId, request.resource.data.genre, 'genre'));

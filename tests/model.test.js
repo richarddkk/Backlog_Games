@@ -7,7 +7,7 @@ const applyOrder = (updates, current = games) => sortGames(current.map((game) =>
 
 describe('Dados da biblioteca', () => {
   it('salva notas de meia estrela e limpa os textos', () => {
-    expect(validateGame(fields)).toEqual({ ...fields, title: 'Hades', review: 'Muito bom.' });
+    expect(validateGame(fields)).toEqual({ ...fields, hoursPlayed: 0, reviewVisibility: 'private', title: 'Hades', review: 'Muito bom.' });
     expect(() => validateGame({ ...fields, rating: 4.3 })).toThrow();
     expect(() => validateGame({ ...fields, rating: 5.5 })).toThrow();
     expect(() => validateGame({ ...fields, status: 'unknown' })).toThrow();

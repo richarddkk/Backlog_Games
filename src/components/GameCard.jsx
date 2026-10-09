@@ -1,7 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Pencil, ChevronLeft, ChevronRight } from 'lucide-react';
-import { formatRating } from '../lib/model.js';
+import { formatRating, formatHours } from '../lib/model.js';
 import Cover from './Cover.jsx';
 import { Stars } from './Rating.jsx';
 
@@ -18,7 +18,7 @@ export default function GameCard({ game, lists, genres, index, total, onEdit, on
     </div>
     <div className="game-card-info"><div className="game-card-heading"><h2><button onClick={() => onEdit(game)} disabled={disabled}>{game.title}</button></h2><button className="card-edit" onClick={() => onEdit(game)} disabled={disabled} aria-label={`Editar dados de ${game.title}`}><Pencil size={15} /></button></div>
       <div className="game-meta"><span>{genre}</span><span className={`status-label status-${status.color}`}>{status.label}</span></div>
-      <div className="card-rating"><Stars value={game.rating} /><span>{game.rating ? formatRating(game.rating) : '—'}</span><div className="move-buttons"><button aria-label={`Mover ${game.title} para antes`} disabled={disabled || index === 0} onClick={() => onMove(game.id, -1)}><ChevronLeft size={16} /></button><button aria-label={`Mover ${game.title} para depois`} disabled={disabled || index === total - 1} onClick={() => onMove(game.id, 1)}><ChevronRight size={16} /></button></div></div>
+      {game.hoursPlayed > 0 && <small className="game-hours">{formatHours(game.hoursPlayed)} de jogo</small>}<div className="card-rating"><Stars value={game.rating} /><span>{game.rating ? formatRating(game.rating) : '—'}</span><div className="move-buttons"><button aria-label={`Mover ${game.title} para antes`} disabled={disabled || index === 0} onClick={() => onMove(game.id, -1)}><ChevronLeft size={16} /></button><button aria-label={`Mover ${game.title} para depois`} disabled={disabled || index === total - 1} onClick={() => onMove(game.id, 1)}><ChevronRight size={16} /></button></div></div>
     </div>
   </article>;
 }

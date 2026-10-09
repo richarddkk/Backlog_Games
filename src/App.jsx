@@ -2,7 +2,11 @@ import { HashRouter, Route, Routes } from 'react-router-dom';
 import AppLayout from './layouts/AppLayout.jsx';
 import LibraryPage from './pages/LibraryPage.jsx';
 import ActivitiesPage from './pages/ActivitiesPage.jsx';
+import ReviewsPage from './pages/ReviewsPage.jsx';
 import FriendsPage from './pages/FriendsPage.jsx';
+import ReviewPage from './pages/ReviewPage.jsx';
+import ProfilePage from './pages/ProfilePage.jsx';
+import ConversationsPage from './pages/ConversationsPage.jsx';
 import NotFoundPage from './pages/NotFoundPage.jsx';
 
 export function AppRoutes() {
@@ -10,6 +14,10 @@ export function AppRoutes() {
     <Route element={<AppLayout />}>
       <Route index element={<LibraryPage />} />
       <Route path="atividades" element={<ActivitiesPage />} />
+      <Route path="reviews" element={<ReviewsPage />} />
+      <Route path="reviews/:authorId/:gameId" element={<ReviewPage />} />
+      <Route path="perfil/:userId" element={<ProfilePage />} />
+      <Route path="conversas" element={<ConversationsPage />} />
       <Route path="amigos" element={<FriendsPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Route>

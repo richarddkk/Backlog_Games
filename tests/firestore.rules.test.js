@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, query, or, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, query, or, where, orderBy, limit } from 'firebase/firestore';
 
 let environment;
 const game = { title: 'Hades', genre: 'Roguelike', status: 'completed', rating: 4.5, coverUrl: '/covers/1145360.jpg', review: 'Muito bom', rank: 1024, createdAt: 100, updatedAt: 100 };
@@ -194,6 +194,141 @@ describe('Atividades e consentimento de amizade', () => {
     await assertFails(getDoc(doc(bob, 'users', 'alice', 'activities', 'added')));
   });
 
+  it('protege textos privados no servidor, sem impedir notas e jogos compartilhados', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const bob = environment.authenticatedContext('bob').firestore();
+    const admin = environment.authenticatedContext('admin').firestore();
+    const guest = environment.unauthenticatedContext().firestore();
+    await grantAdmin('admin');
+    const reviewRef = client => doc(client, 'users', 'alice', 'reviews', 'hades');
+    const batch = writeBatch(alice);
+    batch.set(ref(alice), { ...game, review: '' });
+    batch.set(reviewRef(alice), { text: 'Texto privado', visibility: 'private', updatedAt: 100 });
+    await assertSucceeds(batch.commit());
+    await assertSucceeds(requestFriendship(alice)); await assertSucceeds(acceptFriendship(bob));
+    await assertSucceeds(getDoc(reviewRef(alice)));
+    await assertSucceeds(getDocs(collection(alice, 'users', 'alice', 'reviews')));
+    await assertSucceeds(getDocs(collection(bob, 'users', 'alice', 'games')));
+    const shared = await assertSucceeds(getDoc(ref(bob)));
+    if (shared.data().review !== '' || shared.data().rating !== 4.5) throw new Error('O jogo deve conter a nota, mas nenhum texto privado.');
+    await assertFails(getDoc(reviewRef(bob)));
+    await assertFails(getDocs(collection(bob, 'users', 'alice', 'reviews')));
+    await assertFails(getDoc(reviewRef(admin)));
+    await assertFails(getDoc(reviewRef(guest)));
+    await assertFails(updateDoc(reviewRef(bob), { visibility: 'friends' }));
+    await assertFails(updateDoc(ref(alice), { review: 'Não pode duplicar o texto privado no jogo' }));
+    await assertSucceeds(updateDoc(reviewRef(alice), { visibility: 'friends', updatedAt: 200 }));
+    await assertSucceeds(getDoc(reviewRef(bob)));
+    await assertFails(getDoc(reviewRef(admin)));
+    await assertSucceeds(updateDoc(reviewRef(alice), { visibility: 'private', updatedAt: 300 }));
+    await assertFails(getDoc(reviewRef(bob)));
+    await assertSucceeds(deleteDoc(reviewRef(alice)));
+    await assertSucceeds(getDoc(reviewRef(bob))); // Ausência permite mostrar “ainda sem texto”.
+    await assertSucceeds(deleteDoc(doc(alice, 'friendships', 'alice~bob')));
+    await assertFails(getDoc(reviewRef(bob)));
+  });
+
+  it('migra o texto antigo atomicamente e rejeita visibilidade ou texto inválidos', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const reviewRef = doc(alice, 'users', 'alice', 'reviews', 'hades');
+    await assertSucceeds(setDoc(ref(alice), game));
+    const fields = { text: game.review, visibility: 'private', updatedAt: 100 };
+    await assertFails(setDoc(reviewRef, fields)); // O texto antigo precisa sair do documento público.
+    const migration = writeBatch(alice);
+    migration.update(ref(alice), { review: '' }); migration.set(reviewRef, fields);
+    await assertSucceeds(migration.commit());
+    await assertFails(updateDoc(reviewRef, { visibility: 'public' }));
+    await assertFails(updateDoc(reviewRef, { text: 'x'.repeat(3001) }));
+    await assertFails(updateDoc(reviewRef, { extra: true }));
+    await assertFails(setDoc(doc(alice, 'users', 'alice', 'reviews', 'inexistente'), fields));
+    const remove = writeBatch(alice);
+    remove.delete(ref(alice)); remove.delete(reviewRef);
+    await assertSucceeds(remove.commit());
+  });
+
+  const publication = fields => ({ actorId: 'alice', actorName: 'Alice', gameId: 'hades', gameTitle: 'Hades', coverUrl: game.coverUrl, rating: fields.rating ?? game.rating, status: fields.status ?? game.status, statusLabel: fields.status === 'platinum' ? 'Platinado' : 'Zerado', genreLabel: 'Roguelike', text: fields.text ?? 'Minha review pública', visibility: 'public', updatedAt: serverTimestamp() });
+  const publishReview = async (client, fields = {}) => {
+    const batch = writeBatch(client);
+    batch.set(ref(client), { ...game, review: '', ...(fields.rating !== undefined ? { rating: fields.rating } : {}), ...(fields.status ? { status: fields.status } : {}) });
+    batch.set(doc(client, 'users', 'alice', 'reviews', 'hades'), { text: fields.text ?? 'Minha review pública', visibility: 'public', updatedAt: 200 });
+    batch.set(doc(client, 'publicReviews', 'alice~hades'), publication(fields));
+    return batch.commit();
+  };
+
+  it('publica para todos sem abrir a biblioteca e impede forjar reviews de outra pessoa', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const bob = environment.authenticatedContext('bob').firestore();
+    const guest = environment.unauthenticatedContext().firestore();
+    await assertSucceeds(publishReview(alice));
+    const publicRef = client => doc(client, 'publicReviews', 'alice~hades');
+    await assertSucceeds(getDoc(publicRef(guest)));
+    await assertSucceeds(getDocs(query(collection(guest, 'publicReviews'), orderBy('updatedAt', 'desc'), limit(100))));
+    await assertFails(getDoc(ref(guest)));
+    await assertFails(getDoc(ref(bob)));
+    await assertFails(getDoc(doc(bob, 'users', 'alice', 'reviews', 'hades')));
+    await assertFails(setDoc(publicRef(bob), publication({})));
+    await assertFails(deleteDoc(publicRef(bob)));
+    await assertFails(updateDoc(publicRef(alice), { text: 'Texto diferente da review original', updatedAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(alice, 'publicReviews', 'alice~wrong'), publication({})));
+    await assertFails(updateDoc(ref(alice), { rating: 3 }));
+    await assertSucceeds(publishReview(alice, { rating: 5, status: 'platinum', text: 'Atualizei a opinião' }));
+    const changed = await assertSucceeds(getDoc(publicRef(guest)));
+    if (changed.data().rating !== 5 || changed.data().status !== 'platinum' || changed.data().text !== 'Atualizei a opinião') throw new Error('A publicação precisa acompanhar a review.');
+  });
+
+  it('retira o texto público atomicamente ao mudar o público ou excluir o jogo', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const guest = environment.unauthenticatedContext().firestore();
+    const publicRef = doc(alice, 'publicReviews', 'alice~hades');
+    const reviewRef = doc(alice, 'users', 'alice', 'reviews', 'hades');
+    await assertSucceeds(publishReview(alice));
+    await assertFails(updateDoc(reviewRef, { visibility: 'friends' }));
+    await assertFails(deleteDoc(publicRef));
+    await assertFails(deleteDoc(reviewRef));
+    await assertFails(deleteDoc(ref(alice)));
+    const toFriends = writeBatch(alice);
+    toFriends.update(reviewRef, { visibility: 'friends' }); toFriends.delete(publicRef);
+    await assertSucceeds(toFriends.commit());
+    const removed = await assertSucceeds(getDoc(doc(guest, 'publicReviews', 'alice~hades')));
+    if (removed.exists()) throw new Error('O texto não pode continuar público.');
+    await assertFails(setDoc(publicRef, publication({})));
+    await assertSucceeds(publishReview(alice));
+    const toPrivate = writeBatch(alice);
+    toPrivate.update(reviewRef, { visibility: 'private' }); toPrivate.delete(publicRef);
+    await assertSucceeds(toPrivate.commit());
+    // O cliente também exclui publicações inexistentes ao salvar avaliações privadas.
+    const privateSave = writeBatch(alice);
+    privateSave.set(ref(alice), { ...game, review: '' });
+    privateSave.set(reviewRef, { text: 'Só eu', visibility: 'private', updatedAt: 300 }); privateSave.delete(publicRef);
+    await assertSucceeds(privateSave.commit());
+    await assertSucceeds(publishReview(alice));
+    const remove = writeBatch(alice);
+    remove.delete(ref(alice)); remove.delete(reviewRef); remove.delete(publicRef);
+    await assertSucceeds(remove.commit());
+    const gone = await assertSucceeds(getDoc(doc(guest, 'publicReviews', 'alice~hades')));
+    if (gone.exists()) throw new Error('A publicação do jogo excluído deve desaparecer.');
+  });
+
+  it('a consulta filtrada de amigos recebe apenas textos compartilhados e perde acesso sem amizade', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const bob = environment.authenticatedContext('bob').firestore();
+    await assertSucceeds(publishReview(alice));
+    const privateGame = doc(alice, 'users', 'alice', 'games', 'private');
+    const privateReview = doc(alice, 'users', 'alice', 'reviews', 'private');
+    const batch = writeBatch(alice);
+    batch.set(privateGame, { ...game, review: '' }); batch.set(privateReview, { text: 'Segredo', visibility: 'private', updatedAt: 2 });
+    await assertSucceeds(batch.commit());
+    await assertSucceeds(requestFriendship(alice)); await assertSucceeds(acceptFriendship(bob));
+    const shared = query(collection(bob, 'users', 'alice', 'reviews'), where('visibility', 'in', ['friends', 'public']));
+    const result = await assertSucceeds(getDocs(shared));
+    if (result.size !== 1 || result.docs[0].data().text === 'Segredo') throw new Error('Textos privados não podem ser enviados na consulta.');
+    await assertFails(getDocs(collection(bob, 'users', 'alice', 'reviews')));
+    await assertFails(getDoc(doc(bob, 'users', 'alice', 'reviews', 'private')));
+    await assertSucceeds(deleteDoc(doc(bob, 'friendships', 'alice~bob')));
+    await assertFails(getDocs(shared));
+    await assertSucceeds(getDocs(collection(bob, 'publicReviews'))); // Acesso público depende da publicação, não da amizade.
+  });
+
   it('um histórico inválido impede a gravação parcial do jogo', async () => {
     const alice = environment.authenticatedContext('alice').firestore();
     const batch = writeBatch(alice);
@@ -202,5 +337,123 @@ describe('Atividades e consentimento de amizade', () => {
     await assertFails(batch.commit());
     const snapshot = await assertSucceeds(getDoc(ref(alice)));
     if (snapshot.exists()) throw new Error('A gravação deveria ser atômica.');
+  });
+});
+
+const publishProfile = (client, visibility = 'friends', fields = {}) => {
+  const profile = { displayName: 'Alice', photoData: '', bio: 'Adoro RPGs.', libraryVisibility: visibility, updatedAt: 300, ...fields };
+  const batch = writeBatch(client);
+  batch.set(doc(client, 'users', 'alice', 'profile', 'main'), profile);
+  batch.set(doc(client, 'publicProfiles', 'alice'), profile);
+  return batch.commit();
+};
+const sendChat = (client, senderId = 'alice', text = 'Vamos jogar?', pair = 'alice~bob') => {
+  const batch = writeBatch(client);
+  batch.set(doc(client, 'conversations', pair), { participants: pair.split('~'), updatedAt: serverTimestamp() });
+  batch.set(doc(client, 'conversations', pair, 'messages', 'message'), { senderId, text, createdAt: serverTimestamp() });
+  return batch.commit();
+};
+
+describe('Perfis públicos e horas de jogo', () => {
+  it('publica bio sem abrir biblioteca, impede campos extras e mantém a projeção sincronizada', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const bob = environment.authenticatedContext('bob').firestore();
+    const guest = environment.unauthenticatedContext().firestore();
+    await assertSucceeds(setDoc(ref(alice), { ...game, review: '', hoursPlayed: 42.5 }));
+    await assertSucceeds(publishProfile(alice));
+    await assertSucceeds(getDoc(doc(guest, 'publicProfiles', 'alice')));
+    await assertFails(getDoc(ref(guest)));
+    await assertFails(getDoc(doc(guest, 'users', 'alice', 'profile', 'main')));
+    await assertFails(publishProfile(alice, 'friends', { email: 'private@example.com' }));
+    await assertFails(publishProfile(alice, 'friends', { bio: 'x'.repeat(601) }));
+    await assertFails(updateDoc(doc(bob, 'publicProfiles', 'alice'), { bio: 'Invadido' }));
+    await assertFails(updateDoc(doc(alice, 'publicProfiles', 'alice'), { displayName: 'Desatualizado' }));
+    await assertFails(updateDoc(doc(alice, 'users', 'alice', 'profile', 'main'), { bio: 'Mudança isolada' }));
+    await assertSucceeds(publishProfile(alice, 'friends', { bio: 'Bio atualizada.' }));
+  });
+  it('abre apenas dados de jogos sem texto embutido e revoga leitura quando a biblioteca volta a Amigos', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const guest = environment.unauthenticatedContext().firestore();
+    await assertSucceeds(setDoc(ref(alice), { ...game, review: '', hoursPlayed: 99.5 }));
+    await assertSucceeds(setDoc(doc(alice, 'users', 'alice', 'games', 'legacy'), { ...game, review: 'Texto legado compartilhado só com amigos.' }));
+    await assertSucceeds(setDoc(doc(alice, 'users', 'alice', 'reviews', 'hades'), { text: 'Segredo', visibility: 'private', updatedAt: 200 }));
+    await assertSucceeds(publishProfile(alice, 'public'));
+    await assertSucceeds(getDoc(ref(guest)));
+    await assertSucceeds(getDocs(query(collection(guest, 'users', 'alice', 'games'), where('review', '==', ''))));
+    await assertFails(getDocs(collection(guest, 'users', 'alice', 'games')));
+    await assertFails(getDoc(doc(guest, 'users', 'alice', 'games', 'legacy')));
+    await assertFails(getDoc(doc(guest, 'users', 'alice', 'reviews', 'hades')));
+    await assertSucceeds(getDocs(collection(guest, 'users', 'alice', 'options')));
+    await assertSucceeds(getDocs(collection(guest, 'taxonomy')));
+    await assertSucceeds(publishProfile(alice, 'friends'));
+    await assertFails(getDoc(ref(guest)));
+    await assertFails(getDocs(collection(guest, 'users', 'alice', 'options')));
+  });
+  it('valida horas e exige que a publicação acompanhe horas alteradas', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    for (const hoursPlayed of [-1, 1000001, '10']) await assertFails(setDoc(ref(alice), { ...game, hoursPlayed }));
+    const batch = writeBatch(alice);
+    batch.set(ref(alice), { ...game, review: '', hoursPlayed: 10.5 });
+    batch.set(doc(alice, 'users', 'alice', 'reviews', 'hades'), { text: 'Excelente!', visibility: 'public', updatedAt: 200 });
+    batch.set(doc(alice, 'publicReviews', 'alice~hades'), { actorId: 'alice', actorName: 'Alice', gameId: 'hades', gameTitle: 'Hades', coverUrl: game.coverUrl, rating: game.rating, hoursPlayed: 10.5, status: game.status, statusLabel: 'Zerado', genreLabel: 'Roguelike', text: 'Excelente!', visibility: 'public', updatedAt: serverTimestamp() });
+    await assertSucceeds(batch.commit());
+    await assertFails(updateDoc(ref(alice), { hoursPlayed: 20 }));
+    const update = writeBatch(alice);
+    update.update(ref(alice), { hoursPlayed: 20 });
+    update.update(doc(alice, 'publicReviews', 'alice~hades'), { hoursPlayed: 20, updatedAt: serverTimestamp() });
+    await assertSucceeds(update.commit());
+  });
+});
+
+describe('Conversas privadas entre amigos aceitos', () => {
+  it('pedido pendente, visitante, terceiro e admin não podem ler ou enviar mensagens', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const bob = environment.authenticatedContext('bob').firestore();
+    const third = environment.authenticatedContext('admin').firestore();
+    const guest = environment.unauthenticatedContext().firestore();
+    await grantAdmin('admin');
+    await assertFails(sendChat(alice));
+    await assertSucceeds(requestFriendship(alice));
+    await assertFails(sendChat(alice));
+    await assertSucceeds(acceptFriendship(bob));
+    await assertSucceeds(getDocs(collection(alice, 'conversations', 'alice~bob', 'messages')));
+    await assertSucceeds(sendChat(alice));
+    await assertSucceeds(getDocs(collection(bob, 'conversations', 'alice~bob', 'messages')));
+    await assertSucceeds(getDoc(doc(bob, 'conversations', 'alice~bob')));
+    for (const client of [third, guest]) {
+      await assertFails(getDocs(collection(client, 'conversations', 'alice~bob', 'messages')));
+      await assertFails(getDoc(doc(client, 'conversations', 'alice~bob')));
+      await assertFails(sendChat(client));
+    }
+    await assertFails(getDocs(collection(alice, 'conversations')));
+  });
+  it('valida autor, participantes, texto e data e não permite alterar mensagens já enviadas', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const bob = environment.authenticatedContext('bob').firestore();
+    await assertSucceeds(requestFriendship(alice)); await assertSucceeds(acceptFriendship(bob));
+    await assertFails(sendChat(alice, 'bob'));
+    for (const text of ['', '   \n', 'x'.repeat(2001)]) await assertFails(sendChat(alice, 'alice', text));
+    await assertFails(sendChat(alice, 'alice', 'Oi', 'alice~alice'));
+    await assertFails(setDoc(doc(alice, 'conversations', 'alice~bob'), { participants: ['alice', 'admin'], updatedAt: serverTimestamp() }));
+    await assertSucceeds(sendChat(alice));
+    const message = doc(bob, 'conversations', 'alice~bob', 'messages', 'reply');
+    await assertFails(setDoc(message, { senderId: 'bob', text: 'Olá', createdAt: new Date() }));
+    await assertSucceeds(setDoc(message, { senderId: 'bob', text: 'Olá', createdAt: serverTimestamp() }));
+    await assertFails(updateDoc(message, { text: 'Editado' }));
+    await assertFails(deleteDoc(message));
+    await assertFails(setDoc(doc(bob, 'conversations', 'alice~bob', 'messages', 'extra'), { senderId: 'bob', text: 'Oi', createdAt: serverTimestamp(), secret: true }));
+  });
+  it('revoga acesso ao remover a amizade sem apagar o histórico', async () => {
+    const alice = environment.authenticatedContext('alice').firestore();
+    const bob = environment.authenticatedContext('bob').firestore();
+    await assertSucceeds(requestFriendship(alice)); await assertSucceeds(acceptFriendship(bob));
+    await assertSucceeds(sendChat(alice));
+    await assertSucceeds(deleteDoc(doc(bob, 'friendships', 'alice~bob')));
+    await assertFails(getDocs(collection(alice, 'conversations', 'alice~bob', 'messages')));
+    await assertFails(getDocs(collection(bob, 'conversations', 'alice~bob', 'messages')));
+    await assertFails(sendChat(alice));
+    await assertSucceeds(requestFriendship(alice)); await assertSucceeds(acceptFriendship(bob));
+    const saved = await assertSucceeds(getDocs(collection(bob, 'conversations', 'alice~bob', 'messages')));
+    if (saved.size !== 1) throw new Error('O histórico deve ser preservado.');
   });
 });

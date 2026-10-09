@@ -2,7 +2,11 @@ export const MAX_PHOTO_LENGTH = 180000;
 export function validateProfile(value) {
   if (typeof value.displayName !== 'string' || value.displayName.trim().length > 60) throw new Error('Use um nome de exibição com até 60 caracteres.');
   if (typeof value.photoData !== 'string' || value.photoData.length > MAX_PHOTO_LENGTH || (value.photoData && !/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(value.photoData))) throw new Error('Escolha uma foto válida pelos controles de upload.');
-  return { displayName: value.displayName.trim(), photoData: value.photoData };
+  const bio = value.bio ?? '';
+  if (typeof bio !== 'string' || bio.trim().length > 600) throw new Error('Sua bio pode ter até 600 caracteres.');
+  const libraryVisibility = value.libraryVisibility ?? 'friends';
+  if (!['friends', 'public'].includes(libraryVisibility)) throw new Error('Escolha quem pode ver sua biblioteca.');
+  return { displayName: value.displayName.trim(), photoData: value.photoData, bio: bio.trim(), libraryVisibility };
 }
 export async function preparePhoto(file) {
   if (!file || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Escolha uma imagem JPG, PNG ou WebP.');

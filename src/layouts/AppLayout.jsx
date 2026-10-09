@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Library, Play, CircleCheck, Bookmark, Trophy, Pause, Plus, Sun, Moon, LogIn, LogOut, Cloud, HardDrive, Grip, Gamepad2, LoaderCircle, X, Check, RotateCcw, Settings, ShieldCheck, Bell, Users } from 'lucide-react';
+import { Library, Play, CircleCheck, Bookmark, Trophy, Pause, Plus, Sun, Moon, LogIn, LogOut, Cloud, HardDrive, Grip, Gamepad2, LoaderCircle, X, Check, RotateCcw, Settings, ShieldCheck, Bell, Users, MessageSquare } from 'lucide-react';
 import useLibrary from '../hooks/useLibrary.js';
 import GameEditor from '../components/GameEditor.jsx';
 import AuthDialog from '../components/AuthDialog.jsx';
@@ -10,7 +10,7 @@ import ProfileDialog from '../components/ProfileDialog.jsx';
 import Avatar from '../components/Avatar.jsx';
 import useFriends from '../hooks/useFriends.js';
 
-const titleForPath = (path) => path === '/' ? 'Biblioteca' : path === '/atividades' ? 'Atividades' : path === '/amigos' ? 'Amigos' : 'Página não encontrada';
+const titleForPath = (path) => path === '/' ? 'Biblioteca' : path === '/atividades' ? 'Atividades' : path === '/reviews' ? 'Reviews' : path === '/amigos' ? 'Amigos' : path === '/conversas' ? 'Conversas' : path.startsWith('/perfil/') ? 'Perfil' : path.startsWith('/reviews/') ? 'Review' : 'Página não encontrada';
 const statusIcons = { play: Play, check: CircleCheck, bookmark: Bookmark, trophy: Trophy, pause: Pause, library: Library };
 const initialTheme = () => { try { return localStorage.getItem('checkpoint.theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } };
 
@@ -42,7 +42,7 @@ export default function AppLayout() {
   useEffect(() => { document.title = `${titleForPath(location.pathname)} — Checkpoint`; }, [location.pathname]);
 
   const libraryTitle = activeList === 'all' ? 'Minha biblioteca' : lists.find((status) => status.id === activeList)?.label || 'Lista indisponível';
-  const title = onLibrary ? libraryTitle : location.pathname === '/atividades' ? 'Atividades' : location.pathname === '/amigos' ? 'Amigos' : 'Página não encontrada';
+  const title = onLibrary ? libraryTitle : titleForPath(location.pathname);
   const disabled = !library.ready || !library.taxonomy.ready || library.saving || library.taxonomy.saving;
   const notify = (text, error = false) => setNotice({ text, error });
   return <div className="app-shell">
@@ -52,12 +52,15 @@ export default function AppLayout() {
       <div className="nav-label social-nav-label">SUA JORNADA</div>
       <nav className="collection-nav" aria-label="Páginas">
         <NavLink to="/atividades" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Bell size={19} /><span>Atividades</span></NavLink>
+        <NavLink to="/reviews" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><MessageSquare size={19} /><span>Reviews</span></NavLink>
         <NavLink to="/amigos" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Users size={19} /><span>Amigos</span>{friends.incoming.length > 0 && <span className="nav-count">{friends.incoming.length}</span>}</NavLink>
+        <NavLink to="/conversas" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><MessageSquare size={19} /><span>Conversas</span></NavLink>
+        {library.user && <NavLink to={`/perfil/${library.user.uid}`} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Users size={19} /><span>Meu perfil</span></NavLink>}
       </nav>
-      <div className="sidebar-bottom"><div className="save-panel">{library.user ? <Cloud size={21} /> : <HardDrive size={21} />}<strong>{library.user ? 'Sua coleção na nuvem' : 'Biblioteca local'}</strong><p>{library.user ? 'Acesse seus jogos em qualquer dispositivo.' : 'Entre na sua conta para salvar também na nuvem.'}</p>{!library.user && <button className="button secondary" disabled={!library.authReady} onClick={() => setAuthOpen(true)}><LogIn size={16} />Entrar ou criar conta</button>}</div><div className="sidebar-credit"><span>Feito para quem joga.</span><span>v1.3</span></div></div>
+      <div className="sidebar-bottom"><div className="save-panel">{library.user ? <Cloud size={21} /> : <HardDrive size={21} />}<strong>{library.user ? 'Sua coleção na nuvem' : 'Biblioteca local'}</strong><p>{library.user ? 'Acesse seus jogos em qualquer dispositivo.' : 'Entre na sua conta para salvar também na nuvem.'}</p>{!library.user && <button className="button secondary" disabled={!library.authReady} onClick={() => setAuthOpen(true)}><LogIn size={16} />Entrar ou criar conta</button>}</div><div className="sidebar-credit"><span>Feito para quem joga.</span><span>v1.6</span></div></div>
     </aside>
     <div className="main-shell"><header className="topbar"><div className="breadcrumb"><Library size={17} /><span>Coleção</span><span className="breadcrumb-divider">/</span><strong>{title}</strong></div><div className="topbar-actions"><button className="icon-button" aria-label="Configurações" title="Configurações" disabled={!library.authReady} onClick={() => setSettingsOpen(true)}><Settings size={19} /></button><button className="icon-button theme-toggle" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Ativar tema claro' : 'Ativar tema escuro'} title={theme === 'dark' ? 'Tema claro' : 'Tema escuro'}>{theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}</button><span className="topbar-separator" />{library.user ? <>{library.taxonomy.isAdmin && <span className="admin-badge" title="Administrador"><ShieldCheck size={15} /><span>Admin</span></span>}<button className="account-button profile-account" aria-label="Editar meu perfil" title="Editar meu perfil" onClick={() => setProfileOpen(true)}><Avatar src={library.profile.photoData} name={library.profile.displayName} /><span className="user-name">{library.profile.displayName}</span></button><button className="icon-button" aria-label="Sair da conta" disabled={library.saving || library.taxonomy.saving} onClick={async () => { try { await library.logout(); notify('Você saiu da conta.'); } catch (failure) { notify(failure.message, true); } }}><LogOut size={18} /></button></> : <button className="account-button" disabled={!library.authReady} onClick={() => setAuthOpen(true)}><span className="avatar"><Gamepad2 size={17} /></span><span>Minha conta</span></button>}</div></header>
-      <Outlet context={{ library, friends, activeList, genre, setGenre, setEditor, setClearOpen, notify, disabled, libraryTitle }} />
+      <Outlet context={{ library, friends, activeList, genre, setGenre, setEditor, setClearOpen, notify, disabled, libraryTitle, openProfile: () => setProfileOpen(true), openAuth: () => setAuthOpen(true) }} />
     </div>
     {editor && <GameEditor key={editor.game?.id || 'new'} game={editor.game} lists={lists} genres={genres} initialStatus={activeList} onClose={() => setEditor(null)} onSave={async (fields, id) => { await library.saveGame(fields, id); notify(id ? 'Jogo atualizado.' : 'Jogo adicionado à coleção.'); }} onDelete={async (id) => { await library.removeGame(id); notify('Jogo excluído.'); }} />}
     {settingsOpen && <SettingsDialog taxonomy={library.taxonomy} user={library.user} onClose={() => setSettingsOpen(false)} />}

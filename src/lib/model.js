@@ -1,3 +1,4 @@
+import { reviewVisibility } from './reviews.js';
 export const STATUSES = [
   { id: 'playing', label: 'Jogando', color: 'green', icon: 'play' },
   { id: 'completed', label: 'Zerado', color: 'blue', icon: 'check' },
@@ -9,6 +10,7 @@ export const STATUSES = [
 export const GENRES = ['Ação', 'Aventura', 'RPG', 'Roguelike', 'Metroidvania', 'Plataforma', 'Puzzle', 'Estratégia', 'Simulação', 'Esporte', 'Corrida', 'FPS', 'Terror', 'Luta', 'MMO', 'Outro'];
 export const GUEST_KEY = 'checkpoint.guest.v1';
 export const normalizeText = (value) => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+export const formatHours = (value) => `${Number(value || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} h`;
 export const formatRating = (value) => Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 export const sortGames = (games) => [...games].sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id));
 
@@ -32,7 +34,11 @@ export function validateGame(value, options = null, previous = null) {
   if (value.coverUrl && !safeImageUrl(value.coverUrl)) throw new Error('Use uma URL de imagem começando com https:// ou http://.');
   if (value.coverUrl?.length > 2000) throw new Error('A URL da capa é muito longa.');
   if ((value.review || '').length > 3000) throw new Error('Sua avaliação pode ter até 3.000 caracteres.');
-  return { title: value.title.trim(), genre: value.genre, status: value.status, rating: value.rating, coverUrl: safeImageUrl(value.coverUrl), review: (value.review || '').trim() };
+  const hoursPlayed = value.hoursPlayed ?? 0;
+  if (!Number.isFinite(hoursPlayed) || hoursPlayed < 0 || hoursPlayed > 1000000) throw new Error('Informe horas de jogo entre 0 e 1.000.000.');
+  const visibility = value.reviewVisibility ?? reviewVisibility(previous);
+  if (!['private', 'friends', 'public'].includes(visibility)) throw new Error('Escolha quem pode ler sua avaliação.');
+  return { hoursPlayed, reviewVisibility: visibility, title: value.title.trim(), genre: value.genre, status: value.status, rating: value.rating, coverUrl: safeImageUrl(value.coverUrl), review: (value.review || '').trim() };
 }
 
 export function isStoredGame(game) {
