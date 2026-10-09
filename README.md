@@ -265,12 +265,4 @@ npm test
 
 A versão 1.6.0 foi validada com **52 testes da aplicação, 24 testes de regras e 8 testes do serviço de compartilhamento**, totalizando **84 testes**, além da compilação para GitHub Pages.
 
-## Limites e configuração adicional
-
-A interface mostra até 100 atividades recentes por pessoa, 100 reviews públicas recentes no feed Global, 100 publicações na consulta de um perfil e as 100 mensagens mais recentes de cada conversa. O histórico local preserva 500 atividades.
-
-Perfis de contas antigas são publicados quando a pessoa salva o perfil nesta versão. Jogos muito antigos com texto ainda embutido no documento do jogo permanecem restritos aos amigos até o dono abrir o editor e salvar novamente, separando o texto dos metadados.
-
-Para configurar o Firebase e a conta administradora, consulte `GUIA_CONFIGURACAO.md`. Para atualizar o projeto existente, siga `ATUALIZAR_1.6.0.md`. Para ativar as prévias dos links, siga `COMPARTILHAMENTO.md`. Esses arquivos acompanham o projeto completo.
-
 **Versão descrita: 1.6.0.**
